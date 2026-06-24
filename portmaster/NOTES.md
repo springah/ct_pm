@@ -160,3 +160,24 @@ ffmpeg. On the TrimUI it decoded the intro (`001.dat`, 158.4s, h264 720x486 + aa
 90 video + 143 audio frames, `PROBE_OK`. Confirms de-obfuscation, mov demux, H.264 +
 AAC decode, swscale->RGBA and the new swr channel-layout API all work on-device. The GL
 blit (same quad as Switch) + on-screen playback still want a real visual test.
+
+## On-screen keyboard — DONE (2026-06-25)
+PortMaster handhelds have no system IME, so name entry (cocos TextField + ui::EditBox,
+both routed through the libnx `swkbd*` surface) used to fall back to default names.
+`portmaster/osk.c` now implements `swkbd*` on Linux as a real controller-driven keyboard
+drawn over the GL surface: full QWERTY + digits + shift/space/del/OK, d-pad/stick nav,
+A=type B=backspace Y=shift Start=OK Select=cancel. Labels are rendered with
+`gfx_render_text_rgba` (the bundled ChronoType font) so it matches the game. GL state is
+handed back to cocos via `osk_set_gl_invalidate(e_glInvalidate)` (wired in main.c beside the
+movie one), exactly like movie_player. `swkbd*` moved from inline stubs in switch_compat.h
+to real functions in osk.c. ⚠️ **GL_UNPACK_ALIGNMENT**: the engine leaves it non-1, so the
+RGBA glyph uploads must `glPixelStorei(GL_UNPACK_ALIGNMENT,1)` or odd-width glyphs shear
+diagonally (even-width ones look fine — the giveaway). Verified on the TrimUI:
+`CT_OSK_TEST=1` pops the keyboard at boot; an interactive pass returned `rc=0 name='Claude'`.
+
+## Screenshot (port.json image)
+`pkg/ct/screenshot.png` is referenced by port.json. It's generated from the user's own game,
+not committed (the repo ships no game art — same stance as the .so/assets): boot with
+`CT_CAPTURE=1` (writes frame_NNNNN.ppm + latest.ppm every 300 frames via os_gfx_capture),
+let the title sequence finish (~50s to the full CHRONO TRIGGER logo), then
+`Image.open('latest.ppm').resize((640,360)).save('screenshot.png')`. Ships in the release zip.

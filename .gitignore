@@ -20,3 +20,6 @@ frame_*
 
 # bundled FFmpeg libs (build artifacts — reproduce via portmaster/ffmpeg-build.sh)
 portmaster/pkg/ct/libs/
+
+# port screenshot (generated from the user's own game via CT_CAPTURE)
+portmaster/pkg/ct/screenshot.png
