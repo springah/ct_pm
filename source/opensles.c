@@ -233,14 +233,18 @@ static float mb_to_linear(SLmillibel mb) {
 }
 
 // mix one playing player into the S16 stereo accumulator (int32 to avoid clip).
-// cur/cur_pos are touched only by this (audio) thread, so they need no lock;
-// only the buffer queue is shared with Enqueue. Critically, the engine's
-// completion callback is fired WITHOUT our lock held -- Android's contract --
-// otherwise the engine's mixer thread (holding its own mutex, calling Enqueue
-// which wants our lock) deadlocks against us.
+// cur/cur_pos/playing are shared with the engine thread (bq_Clear nulls cur,
+// play_SetPlayState toggles playing), so the whole body runs under p->lock.
+// The one exception is the completion callback, which MUST fire WITHOUT our
+// lock held -- Android's contract -- otherwise the engine's mixer thread
+// (holding its own mutex, calling Enqueue which wants our lock) deadlocks
+// against us; so we drop the lock around the callback and re-acquire.
 static void mix_player(Player *p, int32_t *acc, int frames) {
-  if (!p->playing)
+  SDL_LockMutex(p->lock);
+  if (!p->playing) {
+    SDL_UnlockMutex(p->lock);
     return;
+  }
 
   const float g = p->gain;
   for (int i = 0; i < frames; i++) {
@@ -248,18 +252,20 @@ static void mix_player(Player *p, int32_t *acc, int frames) {
       // current buffer finished: notify the engine so it enqueues the next
       if (p->cur) {
         p->cur = NULL;
-        if (p->cb)
+        if (p->cb) {
+          SDL_UnlockMutex(p->lock);
           p->cb(&p->bq_vt, p->cb_ctx);
+          SDL_LockMutex(p->lock);
+        }
       }
-      // pop the next buffer (queue access is the only thing that needs the lock)
-      SDL_LockMutex(p->lock);
+      // pop the next buffer (bq_Clear may have run during the callback above,
+      // so re-check head/tail now that we hold the lock again)
       const int have = (p->q_head != p->q_tail);
       BQBuffer b = { NULL, 0 };
       if (have) {
         b = p->q[p->q_head];
         p->q_head = (p->q_head + 1) % BQ_SLOTS;
       }
-      SDL_UnlockMutex(p->lock);
       if (!have)
         break; // underrun: rest is silence
       p->cur = b.data;
@@ -279,6 +285,7 @@ static void mix_player(Player *p, int32_t *acc, int frames) {
     acc[i * 2 + 0] += (int32_t)(l * g);
     acc[i * 2 + 1] += (int32_t)(r * g);
   }
+  SDL_UnlockMutex(p->lock);
 }
 
 // mix the FMV audio ring into the accumulator (already at the device rate)

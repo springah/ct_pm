@@ -201,11 +201,14 @@ long pathconf_fake(const char *path, int name) { (void)path; (void)name; return 
 // open() flag translation (bionic/linux -> newlib)
 // ---------------------------------------------------------------------------
 
-#define LINUX_O_CREAT    0100
-#define LINUX_O_EXCL     0200
-#define LINUX_O_TRUNC    01000
-#define LINUX_O_APPEND   02000
-#define LINUX_O_NONBLOCK 04000
+#define LINUX_O_CREAT     0100
+#define LINUX_O_EXCL      0200
+#define LINUX_O_TRUNC     01000
+#define LINUX_O_APPEND    02000
+#define LINUX_O_NONBLOCK  04000
+#define LINUX_O_DIRECTORY 0200000
+#define LINUX_O_NOFOLLOW  0400000
+#define LINUX_O_CLOEXEC   02000000
 
 static int convert_open_flags(int flags) {
   int out = flags & 3; // O_RDONLY/O_WRONLY/O_RDWR match
@@ -213,6 +216,22 @@ static int convert_open_flags(int flags) {
   if (flags & LINUX_O_EXCL)   out |= O_EXCL;
   if (flags & LINUX_O_TRUNC)  out |= O_TRUNC;
   if (flags & LINUX_O_APPEND) out |= O_APPEND;
+  // Translate the remaining bits the engine may set. Without these, O_CLOEXEC
+  // is lost (fds leak across any exec) and O_DIRECTORY's "must be a dir"
+  // guarantee silently degrades to opening a regular file. Guarded because not
+  // every target's <fcntl.h> defines them.
+#ifdef O_NONBLOCK
+  if (flags & LINUX_O_NONBLOCK)  out |= O_NONBLOCK;
+#endif
+#ifdef O_DIRECTORY
+  if (flags & LINUX_O_DIRECTORY) out |= O_DIRECTORY;
+#endif
+#ifdef O_NOFOLLOW
+  if (flags & LINUX_O_NOFOLLOW)  out |= O_NOFOLLOW;
+#endif
+#ifdef O_CLOEXEC
+  if (flags & LINUX_O_CLOEXEC)   out |= O_CLOEXEC;
+#endif
   return out;
 }
 
@@ -299,6 +318,13 @@ static void convert_stat(const struct stat *in, struct bionic_stat *out) {
   out->st_atim.tv_sec = in->st_atime;
   out->st_mtim.tv_sec = in->st_mtime;
   out->st_ctim.tv_sec = in->st_ctime;
+#ifdef __linux__
+  // preserve sub-second resolution (glibc exposes st_*tim.tv_nsec); without
+  // this any caller comparing mtimes at sub-second granularity sees them equal
+  out->st_atim.tv_nsec = in->st_atim.tv_nsec;
+  out->st_mtim.tv_nsec = in->st_mtim.tv_nsec;
+  out->st_ctim.tv_nsec = in->st_ctim.tv_nsec;
+#endif
 }
 
 int stat_fake(const char *path, struct bionic_stat *st) {
@@ -441,7 +467,14 @@ size_t mbsnrtowcs_fake(wchar_t *dst, const char **src, size_t nms, size_t len, v
   size_t i = 0;
   const char *s = *src;
   while (i < nms && s[i] && (!dst || i < len)) { if (dst) dst[i] = (unsigned char)s[i]; i++; }
-  if (dst && i < len) { dst[i] = 0; *src = NULL; }
+  // Only update *src when writing to dst. Set it to NULL only if the source's
+  // terminating NUL was actually reached; otherwise advance it past the bytes
+  // consumed so a draining caller resumes where it left off (the old code set
+  // NULL or left it unchanged on the limit path -> reprocessing / hang).
+  if (dst) {
+    if (i < nms && i < len && s[i] == 0) { dst[i] = 0; *src = NULL; }
+    else *src = s + i;
+  }
   return i;
 }
 size_t wcsnrtombs_fake(char *dst, const wchar_t **src, size_t nwc, size_t len, void *ps) {
@@ -449,7 +482,10 @@ size_t wcsnrtombs_fake(char *dst, const wchar_t **src, size_t nwc, size_t len, v
   size_t i = 0;
   const wchar_t *s = *src;
   while (i < nwc && s[i] && (!dst || i < len)) { if (dst) dst[i] = (char)s[i]; i++; }
-  if (dst && i < len) { dst[i] = 0; *src = NULL; }
+  if (dst) {
+    if (i < nwc && i < len && s[i] == 0) { dst[i] = 0; *src = NULL; }
+    else *src = s + i;
+  }
   return i;
 }
 
