@@ -194,10 +194,28 @@ static void gl_free(GLVid *g) {
 
 // --- playback ---------------------------------------------------------------
 
+#ifdef __SWITCH__
 static int skip_pressed(PadState *pad) {
   padUpdate(pad);
   return (padGetButtonsDown(pad) & (HidNpadButton_A | HidNpadButton_B | HidNpadButton_Plus)) != 0;
 }
+#else
+// Linux: poll the SDL pad (this also pumps window/quit events so the OS doesn't
+// think we hung during the blocking movie). Edge-detected against the previous
+// poll so a button still held from the menu that launched the clip can't skip it
+// instantly; a quit request (Start+Select / menu+Start) also ends the clip.
+#define OS_SKIP_MASK (OS_BTN_A | OS_BTN_B | OS_BTN_START | OS_BTN_SELECT)
+static uint32_t g_skip_prev = OS_SKIP_MASK; // assume held at start -> require release first
+static int skip_pressed(void) {
+  os_input_state st;
+  os_input_poll(&st);
+  if (st.quit) return 1;
+  uint32_t cur  = st.buttons & OS_SKIP_MASK;
+  uint32_t edge = cur & ~g_skip_prev;       // freshly pressed since last poll
+  g_skip_prev = cur;
+  return edge != 0;
+}
+#endif
 
 int movie_play(const char *name) {
   int msize = 0;
@@ -221,8 +239,14 @@ int movie_play(const char *name) {
   int vidx = -1, aidx = -1, vw = 0, vh = 0, dev_rate = 48000;
   GLVid gl; int gl_ok = 0;
   MemBuf mem = { mdata, msize, 0 };
+#ifdef __SWITCH__
   PadState pad;
   padInitializeDefault(&pad);
+  #define MOVIE_SKIP() skip_pressed(&pad)
+#else
+  g_skip_prev = OS_SKIP_MASK; // re-arm edge detection for this clip
+  #define MOVIE_SKIP() skip_pressed()
+#endif
 
   unsigned char *iobuf = av_malloc(65536);
   avio = avio_alloc_context(iobuf, 65536, 0, &mem, mem_read, NULL, mem_seek);
@@ -307,9 +331,9 @@ int movie_play(const char *name) {
                            : (double)(armGetSystemTick() - t0) / tickHz;
             if (clk + 0.001 >= pts) break;
             svcSleepThread(2000000ull); // 2ms
-            if (skip_pressed(&pad)) stop = 1;
+            if (MOVIE_SKIP()) stop = 1;
           }
-          if (skip_pressed(&pad)) stop = 1;
+          if (MOVIE_SKIP()) stop = 1;
           if (gl_ok) { gl_draw(&gl, rgba, vw, vh); gl_present(); }
           if (stop) break;
         }

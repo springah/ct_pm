@@ -13,6 +13,10 @@ portmaster/_so/
 
 # the built Linux binary + debug captures
 /ct
+/movie_probe
 portmaster/pkg/ct/ct
 *.ppm
 frame_*
+
+# bundled FFmpeg libs (build artifacts — reproduce via portmaster/ffmpeg-build.sh)
+portmaster/pkg/ct/libs/

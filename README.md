@@ -30,23 +30,25 @@ Place them in the port's game directory (`.../ports/ct/`) alongside the `ct` bin
 
 ## Build (PortMaster / aarch64 Linux)
 
-Built in the PortMaster aarch64 builder image (glibc 2.31 for broad device compatibility):
+Built in the PortMaster aarch64 builder image (glibc 2.31 for broad device compatibility).
+First build the bundled decode-only FFmpeg once, then the game:
 
 ```sh
 IMG=ghcr.io/monkeyx-net/portmaster-build-templates/portmaster-builder:aarch64-latest
-docker run --rm --platform=linux/arm64 -v "$PWD":/workspace -w /workspace "$IMG" bash -lc '
-  CF="-O2 -march=armv8-a -Iportmaster -Isource $(sdl2-config --cflags) $(pkg-config --cflags freetype2)"
-  SRC="portmaster/os_linux.c portmaster/movie_stub.c portmaster/compat_libc.c \
-       source/asset.c source/config.c source/error.c source/gfx.c source/imports.c \
-       source/jni_fake.c source/libc_shim.c source/main.c source/opensles.c \
-       source/prefs.c source/so_util.c source/util.c"
-  gcc $CF $SRC $(sdl2-config --libs) $(pkg-config --libs freetype2) \
-      -lGLESv2 -lEGL -lpthread -lm -ldl -o ct'
+
+# 1) minimal FFmpeg 7.1 (mov + h264/hevc/aac decode + swscale/swresample) -> $FF/{include,lib}
+#    see portmaster/ffmpeg-build.sh (LGPL; ~3.8 MB of .so, sonames .61/.59/.8/.5)
+
+# 2) the game, with the FMV player linked
+docker run --rm --platform=linux/arm64 \
+  -v "$PWD":/workspace -v "$FF":/ff -w /workspace "$IMG" bash portmaster/build.sh
 ```
 
-`source/movie_player.c` (FMV) is replaced by `portmaster/movie_stub.c` on Linux until the
-runtime ffmpeg path is wired. See `portmaster/NOTES.md` for the full architecture,
-milestone history, and the `os_*` abstraction map.
+`portmaster/build.sh` compiles `source/movie_player.c` (the real FMV player) and links the
+bundled FFmpeg; the 5 `.so.*` are copied into `portmaster/pkg/ct/libs/` and found at runtime
+via the launcher's `LD_LIBRARY_PATH`. For a quick boot-to-title build without ffmpeg, swap
+in `portmaster/movie_stub.c`. See `portmaster/NOTES.md` for the full architecture, the FMV
+section, milestone history, and the `os_*` abstraction map.
 
 ## Build (Nintendo Switch)
 
@@ -65,6 +67,9 @@ byte-identical to the original; the `.nro` still builds.
 * **NaGaa95** — `ct_nx`, the Switch port this derives from
 * **JohnnyonFlame** — gmloader-next, reference for the Linux ELF-loader + glibc TLS handling
 * **Caveras** — the *ChronoType* SNES font recreation (CC BY-NC-SA; see `portmaster/pkg/ct/font-license.txt`)
+* **FFmpeg** — the [FFmpeg project](https://ffmpeg.org) (LGPL v2.1); a minimal decode-only
+  build is bundled for cutscene playback (`portmaster/ffmpeg-build.sh`, license in
+  `portmaster/pkg/ct/licenses/`)
 
 ## Legal
 

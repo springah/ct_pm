@@ -119,3 +119,44 @@ is 0-on-success; egl_init is 1-on-success) — got it backwards first and aborte
 ## Compile check
 `os_linux.c` syntax-checked in the builder (SDL2 2.32, glibc 2.31). It is a skeleton —
 not yet linked against the rest; input/env TODOs marked inline.
+
+## FMV / cutscenes — WIRED (2026-06-24)
+The intro + story cutscenes (`assets/001.dat`..`008.dat`, `007-en.dat`) are
+XOR-obfuscated MP4 (H.264 720x486 + AAC 48kHz). `source/movie_player.c` (the proven
+Switch path) is now compiled on Linux too — `portmaster/movie_stub.c` is only for
+quick boot-to-title builds without ffmpeg.
+
+Platform deltas vs the Switch build (all in `movie_player.c`, behind `#ifdef __SWITCH__`):
+- present: `os_gfx_swap()` instead of `eglSwapBuffers` (already there).
+- skip input: a Linux `skip_pressed()` polls `os_input_poll()` (A/B/Start/Select),
+  edge-detected so a button held from the launching menu can't insta-skip, and it
+  honours the quit combo. Polling each spin also pumps SDL events so the OS doesn't
+  flag the blocking movie as hung.
+- audio: `opensles_movie_*` is pure SDL (cross-platform) — unchanged.
+
+### Bundled FFmpeg (decode-only, LGPL)
+The device (Knulli) ships FFmpeg 7.x, but for portability across PortMaster devices
+we **bundle** a minimal decode-only FFmpeg 7.1.1 in `pkg/ct/libs/` and load it via the
+launcher's `LD_LIBRARY_PATH=$GAMEDIR/libs`. Built with `portmaster/ffmpeg-build.sh`
+(mov demux + h264/hevc/aac decode + swscale + swresample; ~3.8 MB, sonames .61/.59/.8/.5).
+The only external NEEDED are libc/libm/libpthread/ld-linux (present everywhere).
+Note: enabling **hevc** is required even though cutscenes are h264 — h264's SEI parser
+(`h2645_sei.o`) references `ff_aom_uninit_film_grain_params`, only defined when the
+HEVC decoder/SEI is compiled (an FFmpeg minimal-build dep gap).
+
+LGPL: unmodified, dynamically linked. `pkg/ct/licenses/FFmpeg-COPYING.LGPLv2.1.txt`
++ the committed build script (`ffmpeg-build.sh`) satisfy the relink/source obligation.
+
+### Build (with FMV)
+`portmaster/build.sh` compiles `source/movie_player.c` (NOT movie_stub) and links
+`-lavformat -lavcodec -lswscale -lswresample -lavutil` from `$FFPREFIX`. Run it in the
+builder with the ffmpeg prefix mounted at `/ff`. Then copy the 5 `.so.*` from the
+ffmpeg build into `pkg/ct/libs/` named by soname (these are gitignored build artifacts).
+
+### Verification (2026-06-24)
+`portmaster/movie_probe.c` — a headless decode smoke test (no display, no engine):
+de-obfuscates a real `.dat`, demuxes + decodes video & audio frames through the bundled
+ffmpeg. On the TrimUI it decoded the intro (`001.dat`, 158.4s, h264 720x486 + aac 48k):
+90 video + 143 audio frames, `PROBE_OK`. Confirms de-obfuscation, mov demux, H.264 +
+AAC decode, swscale->RGBA and the new swr channel-layout API all work on-device. The GL
+blit (same quad as Switch) + on-screen playback still want a real visual test.
