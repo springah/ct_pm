@@ -182,6 +182,17 @@ static SDL_JoystickID      s_pad_id = -1;
 static const int OS_TRIGGER_THRESH = 8000; // ZL/ZR digital threshold (~0.24)
 static const int OS_STICK_DEADZONE = 3900; // ~0.12 of 32768
 
+// The TrimUI MENU/FN button is a separate evdev "sunxi-keyboard" device, not the
+// gamepad SDL opens, so it arrives as SDL_KEYDOWN rather than a controller button.
+// Track it so "menu + Start" can quit. Covers the likely keysyms a menu/fn/home
+// key emits across these handhelds.
+static int g_menu_key_down = 0;
+static int os_is_menu_key(SDL_Keycode k) {
+    return k == SDLK_MENU || k == SDLK_ESCAPE || k == SDLK_HOME ||
+           k == SDLK_AC_HOME || k == SDLK_APPLICATION || k == SDLK_POWER ||
+           k == SDLK_F1;
+}
+
 // Generic fallback mapping for a plain joystick whose GUID the framework's
 // SDL_GAMECONTROLLERCONFIG doesn't cover. Covers the common handheld layout
 // (face a:b0 b:b1 x:b2 y:b3, shoulders b4/b5, select/start b6/b7, hat dpad,
@@ -241,6 +252,12 @@ void os_input_poll(os_input_state *st) {
         switch (e.type) {
         case SDL_QUIT:
             st->quit = true;
+            break;
+        case SDL_KEYDOWN:
+            if (os_is_menu_key(e.key.keysym.sym)) g_menu_key_down = 1;
+            break;
+        case SDL_KEYUP:
+            if (os_is_menu_key(e.key.keysym.sym)) g_menu_key_down = 0;
             break;
         case SDL_CONTROLLERDEVICEADDED:
             if (!s_pad && SDL_IsGameController(e.cdevice.which)) {
@@ -303,6 +320,17 @@ void os_input_poll(os_input_state *st) {
     if (lx >  OS_STICK_DEADZONE) b |= OS_BTN_RIGHT;
     if (ly < -OS_STICK_DEADZONE) b |= OS_BTN_UP;
     if (ly >  OS_STICK_DEADZONE) b |= OS_BTN_DOWN;
+
+    // Quit hotkey (reliable, native — no gptokeyb grab): Start+Select (universal),
+    // Start+Guide (if the menu button maps to the gamepad guide), or the hardware
+    // MENU key (separate evdev) + Start. Any of these requests a clean quit.
+    {
+        int start  = (b & OS_BTN_START) != 0;
+        int select = (b & OS_BTN_SELECT) != 0;
+        int guide  = SDL_GameControllerGetButton(c, SDL_CONTROLLER_BUTTON_GUIDE);
+        if (start && (select || guide || g_menu_key_down))
+            st->quit = true;
+    }
 
     st->buttons = b;
     // Normalise to -1..1; SDL Y axes are +down, the engine wants +up, so negate Y.

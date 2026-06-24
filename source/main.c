@@ -81,6 +81,11 @@ static void ct_crash_handler(int sig, siginfo_t *info, void *uctx) {
   _exit(139);
 }
 
+// External-kill (framework / system quit hotkey) -> request a clean exit that the
+// main loop honours within a frame, so returning to the frontend is reliable+fast.
+static volatile sig_atomic_t g_term_requested = 0;
+static void ct_term_handler(int sig) { (void)sig; g_term_requested = 1; }
+
 static void ct_install_crash_handler(void) {
   setvbuf(stdout, NULL, _IONBF, 0);
   setvbuf(stderr, NULL, _IONBF, 0);
@@ -94,6 +99,13 @@ static void ct_install_crash_handler(void) {
   sigaction(SIGBUS, &sa, NULL);
   sigaction(SIGILL, &sa, NULL);
   sigaction(SIGFPE, &sa, NULL);
+
+  struct sigaction st;
+  memset(&st, 0, sizeof(st));
+  st.sa_handler = ct_term_handler;
+  sigemptyset(&st.sa_mask);
+  sigaction(SIGTERM, &st, NULL);
+  sigaction(SIGINT, &st, NULL);
 }
 #endif
 
@@ -691,7 +703,7 @@ int main(void) {
 #ifdef __SWITCH__
   while (appletMainLoop() && !jni_quit_requested) {
 #else
-  while (!jni_quit_requested && !g_in.quit) {
+  while (!jni_quit_requested && !g_in.quit && !g_term_requested) {
 #endif
     // pause/resume on focus changes
 #ifdef __SWITCH__
