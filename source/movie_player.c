@@ -293,6 +293,12 @@ int movie_play(const char *name) {
                                 &adec->ch_layout, adec->sample_fmt, adec->sample_rate, 0, NULL) == 0 && swr)
           swr_init(swr);
         apcm = malloc((size_t)192000 * 2 * sizeof(int16_t));
+        // Without a working resampler or PCM buffer there is no audio clock;
+        // disable the audio path so frame pacing falls back to the wall clock.
+        // Otherwise opensles_movie_samples_played() stays 0 and every frame
+        // burns the full spin budget (~4s) waiting for an audio clock that
+        // never advances.
+        if (!swr || !apcm) aidx = -1;
       } else { aidx = -1; }
     } else { aidx = -1; }
   }
