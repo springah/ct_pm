@@ -816,16 +816,18 @@ static void j_GetStringUTFRegion(void *env, void *jstr, int start, int len, char
   (void)env;
   const char *s = obj_str(jstr);
   int sl = (int)strlen(s);
-  if (start < 0 || start > sl) return;
-  if (start + len > sl) len = sl - start;
-  memcpy(buf, s + start, len > 0 ? len : 0);
+  // subtraction form: "start + len > sl" overflows for large len and lets an
+  // out-of-bounds copy through. Compare against the remaining length instead.
+  if (start < 0 || len < 0 || start > sl) return;
+  if (len > sl - start) len = sl - start;
+  memcpy(buf, s + start, (size_t)len);
 }
 static void j_GetStringRegion(void *env, void *jstr, int start, int len, uint16_t *buf) {
   (void)env;
   size_t u = 0;
   uint16_t *t = jni_u8_to_u16(obj_str(jstr), &u);
   if (!t) return;
-  if (start >= 0 && len > 0 && (size_t)(start + len) <= u)
+  if (start >= 0 && len >= 0 && (size_t)start <= u && (size_t)len <= u - (size_t)start)
     memcpy(buf, t + start, (size_t)len * sizeof(uint16_t));
   free(t);
 }
@@ -859,13 +861,14 @@ static void j_ReleasePriArrayElements(void *env, void *arr, void *elems, int mod
 static void j_GetPriArrayRegion(void *env, void *arr, int start, int len, void *buf) {
   (void)env;
   FakePriArray *a = arr;
-  if (a && a->tag == TAG_PRIARR && start >= 0 && start + len <= a->len)
+  // subtraction form avoids the signed overflow in "start + len <= a->len"
+  if (a && a->tag == TAG_PRIARR && start >= 0 && len >= 0 && len <= a->len - start)
     memcpy(buf, (char *)a->data + (size_t)start * a->elem_size, (size_t)len * a->elem_size);
 }
 static void j_SetPriArrayRegion(void *env, void *arr, int start, int len, const void *buf) {
   (void)env;
   FakePriArray *a = arr;
-  if (a && a->tag == TAG_PRIARR && start >= 0 && start + len <= a->len)
+  if (a && a->tag == TAG_PRIARR && start >= 0 && len >= 0 && len <= a->len - start)
     memcpy((char *)a->data + (size_t)start * a->elem_size, buf, (size_t)len * a->elem_size);
 }
 
