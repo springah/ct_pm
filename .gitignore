@@ -1,4 +1,3 @@
-# game binaries (user-supplied) + build artifacts
 *.apk
 *.elf
 *.nacp
@@ -8,11 +7,4 @@ assets/
 build/
 config.txt
 debug.log
-log.txt
 portmaster/_so/
-
-# the built Linux binary + debug captures
-/ct
-portmaster/pkg/ct/ct
-*.ppm
-frame_*

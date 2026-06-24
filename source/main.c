@@ -746,13 +746,19 @@ int main(void) {
   }
 
   prefs_flush();
-  if (e_nativeOnPause) e_nativeOnPause();
+  if (e_nativeOnPause) e_nativeOnPause();  // engine autosave/flush (data safety)
+#ifdef __SWITCH__
   opensles_shutdown();
   egl_deinit();
-#ifdef __SWITCH__
   plExit();
   extern void NX_NORETURN __libnx_exit(int rc);
   __libnx_exit(0);
+#else
+  // Fast quit: saves are already flushed above. Skip the slow SDL-audio / EGL /
+  // Mali teardown (which makes returning to the frontend feel sluggish) and let
+  // the kernel reclaim everything immediately.
+  fflush(NULL);
+  _exit(0);
 #endif
   return 0;
 }

@@ -21,17 +21,46 @@ source $controlfolder/control.txt
 get_controls
 
 GAMEDIR="/$directory/ports/ct"
+cd "$GAMEDIR"
 
+# --- first-run: require the user-supplied game files ---------------------------
+missing=""
+[ -f "$GAMEDIR/libchrono.so" ]            || missing="$missing libchrono.so"
+[ -f "$GAMEDIR/libc++_shared.so" ]        || missing="$missing libc++_shared.so"
+[ -f "$GAMEDIR/assets/resources.bin" ]    || missing="$missing assets/"
+if [ -n "$missing" ]; then
+  clear
+  echo ""
+  echo "  Chrono Trigger - missing game files:$missing"
+  echo ""
+  echo "  Copy these from your own Chrono Trigger Android APK (v2.1.5) into:"
+  echo "    $GAMEDIR/"
+  echo "    - lib/arm64-v8a/libchrono.so      -> libchrono.so"
+  echo "    - lib/arm64-v8a/libc++_shared.so  -> libc++_shared.so"
+  echo "    - the whole assets/ folder        -> assets/"
+  echo ""
+  echo "  (closing in 15s)"
+  sleep 15
+  exit 1
+fi
+
+# --- fonts: ship ChronoType (font.ttf); self-heal a CJK fallback for ja/ko/zh --
+if [ ! -f "$GAMEDIR/fonts/standard.ttf" ]; then
+  mkdir -p "$GAMEDIR/fonts"
+  for f in /usr/share/emulationstation/resources/DroidSansFallbackFull.ttf \
+           "$controlfolder/resources/NotoSansSC-Regular.ttf" \
+           /usr/share/fonts/dejavu/DejaVuSans.ttf; do
+    [ -f "$f" ] && cp -f "$f" "$GAMEDIR/fonts/standard.ttf" && break
+  done
+fi
+
+# --- exports ------------------------------------------------------------------
 export LD_LIBRARY_PATH="$GAMEDIR/libs:$LD_LIBRARY_PATH"
 export SDL_GAMECONTROLLERCONFIG="$sdl_controllerconfig"   # framework pad mapping
 export GAMEDIR
 export CT_FONT_SCALE=1.5   # pixel-font (ChronoType) visual-size scale; tune to taste
 
-cd "$GAMEDIR"
 $ESUDO chmod +x "$GAMEDIR/ct" 2>/dev/null
-
-# Native SDL controller (the loader opens the pad itself, with a built-in
-# fallback mapping if the framework GUID doesn't match). Plain log redirect.
 ./ct > "$GAMEDIR/log.txt" 2>&1
 
 printf "\033[H\033[2J"

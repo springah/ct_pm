@@ -3,71 +3,78 @@
 <img src="extras/banner.png" alt="Banner" width="40%">
 
 </div>
-<h1 align=center>Chrono Trigger — PortMaster (aarch64 Linux) port</h1>
+<h1 align=center>Chrono Trigger — Nintendo Switch port</h1>
 
-A loader/port of the Android version of *Chrono Trigger*
-(`com.square_enix.android_googleplay.chrono`, v2.1.5) for **PortMaster** handhelds
-(aarch64 Linux: muOS / Knulli / ArkOS / ROCKNIX / AmberELEC …). It maps the original
-Android `arm64-v8a` `.so` files, shims their imports to native libraries, and runs the
-game in a minimal emulated-Android environment via **SDL2 + GLES2**.
+</div>
 
-This is a sibling of [`ct_nx`](https://github.com/springah/ct_nx) (the Nintendo Switch
-port). The codebase is **dual-target**: the OS layer is behind `#ifdef __SWITCH__`, so the
-same `source/` builds for both Switch (libnx) and Linux (SDL2/POSIX, in `portmaster/`).
+This is a wrapper/port of the Android version of *Chrono Trigger*
+(`com.square_enix.android_googleplay.chrono`, v2.1.5). It loads the original game
+binaries, patches them and runs them: we natively run the original Android `.so`
+files inside a minimal emulated Android environment.
 
-> Status: **playable** — boots, renders on the GPU, plays and saves. Verified on a
-> **TrimUI Smart Pro** (Allwinner A133 / Mali-G31 / Knulli). See `portmaster/NOTES.md`.
+### How to install
 
-## You supply the game
-
-No game assets or original code are included. From your own legally-owned APK (v2.1.5):
+You're going to need the **`.apk`** for version 2.1.5. From it you need:
 * `lib/arm64-v8a/libchrono.so` — the engine
-* `lib/arm64-v8a/libc++_shared.so` — its C++ runtime
-* the entire `assets/` folder (`resources.bin`, `001.dat`…`008.dat`, `007-en.dat`,
-  `Shaders/`, `build_date.txt`)
+* `lib/arm64-v8a/libc++_shared.so` — the C++ runtime it depends on
+* the **entire `assets/` folder** — the game data (`resources.bin`, `001.dat`…
+  `008.dat`, `007-en.dat`, `Shaders/`, `build_date.txt`)
 
-Place them in the port's game directory (`.../ports/ct/`) alongside the `ct` binary.
+To install:
+1. Create a folder called `ct` in the `switch` folder on your SD card.
+2. From your `.apk`, extract **`lib/arm64-v8a/libchrono.so`** to `/switch/ct/`.
+3. From your `.apk`, extract **`lib/arm64-v8a/libc++_shared.so`** to `/switch/ct/`.
+4. From your `.apk`, copy the **whole `assets/` directory** to `/switch/ct/assets/`.
+5. Copy **`ct_nx.nro`** into `/switch/ct/`.
 
-## Build (PortMaster / aarch64 Linux)
+### Notes
 
-Built in the PortMaster aarch64 builder image (glibc 2.31 for broad device compatibility):
+This will not work in applet/album mode. Use a game override (hold R on a title)
+or a forwarder, so the homebrew gets the full memory and required syscalls.
 
-```sh
-IMG=ghcr.io/monkeyx-net/portmaster-build-templates/portmaster-builder:aarch64-latest
-docker run --rm --platform=linux/arm64 -v "$PWD":/workspace -w /workspace "$IMG" bash -lc '
-  CF="-O2 -march=armv8-a -Iportmaster -Isource $(sdl2-config --cflags) $(pkg-config --cflags freetype2)"
-  SRC="portmaster/os_linux.c portmaster/movie_stub.c portmaster/compat_libc.c \
-       source/asset.c source/config.c source/error.c source/gfx.c source/imports.c \
-       source/jni_fake.c source/libc_shim.c source/main.c source/opensles.c \
-       source/prefs.c source/so_util.c source/util.c"
-  gcc $CF $SRC $(sdl2-config --libs) $(pkg-config --libs freetype2) \
-      -lGLESv2 -lEGL -lpthread -lm -ldl -o ct'
-```
+Save data, the cocos2d-x `Cocos2dxPrefsFile.txt` settings store and the port's
+`config.txt` are kept in `/switch/ct/`.
 
-`source/movie_player.c` (FMV) is replaced by `portmaster/movie_stub.c` on Linux until the
-runtime ffmpeg path is wired. See `portmaster/NOTES.md` for the full architecture,
-milestone history, and the `os_*` abstraction map.
+### Configuration
 
-## Build (Nintendo Switch)
+`config.txt` is created on first run:
+* `screen_width` / `screen_height` — render resolution; `-1` picks 1280x720
+  handheld and 1920x1080 docked.
+* `language` — selects the in-game text/assets: one of `en fr de it es ja ko zh`.
+  Anything other than `ja` uses the localized (`-en`) data. Defaults to English.
 
-Unchanged from `ct_nx` — devkitA64 + libnx (`make`). The `#ifdef __SWITCH__` paths are
-byte-identical to the original; the `.nro` still builds.
+### How to build
 
-## Configuration
+You're going to need devkitA64 and the following devkitPro packages:
+* `switch-mesa`
+* `switch-libdrm_nouveau`
+* `switch-sdl2`
+* `switch-freetype`
+* `switch-libpng`
+* `switch-harfbuzz`
+* `switch-ffmpeg` (+ its codec deps `switch-dav1d`, `switch-libopus`,
+  `switch-libvorbisidec`, `switch-libwebp`, `switch-libogg`)
 
-`config.txt` (created on first run): `screen_width`/`screen_height` (`-1` = panel default),
-`language` (`en fr de it es ja ko zh`). Launcher env: `CT_FONT_SCALE` tunes the UI font size.
+### Credits
 
-## Credits
+* fgsfds for [max_nx](https://github.com/fgsfdsfgs/max_nx), which this loader is
+  based on
+* TheOfficialFloW for the original Vita ports that pioneered this technique
 
-* **fgsfds** — [max_nx](https://github.com/fgsfdsfgs/max_nx), the loader this is based on
-* **TheOfficialFloW** — the original Vita ports that pioneered the technique
-* **NaGaa95** — `ct_nx`, the Switch port this derives from
-* **JohnnyonFlame** — gmloader-next, reference for the Linux ELF-loader + glibc TLS handling
-* **Caveras** — the *ChronoType* SNES font recreation (CC BY-NC-SA; see `portmaster/pkg/ct/font-license.txt`)
+### Support
 
-## Legal
+If you enjoy my work and want to support me :
 
-No affiliation with Square Enix. "Chrono Trigger" is a trademark of its owner. No game
-assets or original program code are included; users must supply their own legally-owned
-copy. Source under the MIT License (see `LICENSE`); bundled font under its own license.
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/D1D1P2MOG)
+
+### Legal
+
+This project has no direct affiliation with Square Enix. "Chrono Trigger" is a
+trademark of its respective owner. All Rights Reserved.
+
+No assets or program code from the original game or its Android port are included
+in this project. We do not condone piracy in any way, shape or form and encourage
+users to legally own the original game.
+
+Unless specified otherwise, the source code provided in this repository is
+licensed under the MIT License. Please see the accompanying LICENSE file.
