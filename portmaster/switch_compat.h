@@ -76,14 +76,19 @@ static inline bool semaphoreTryWait(Semaphore *s)      { return sem_trywait(s) =
 // newlib/bionic spell the errno accessor __errno; glibc uses __errno_location.
 static inline int *__errno(void) { return __errno_location(); }
 
-// software keyboard (IME): no on-screen keyboard on PortMaster handhelds. Stub so
-// text entry yields no input for now (revisit with SDL_StartTextInput later).
-typedef struct { int _unused; } SwkbdConfig;
-static inline Result swkbdCreate(SwkbdConfig *c, int n)                       { (void)c; (void)n; return 1; }
-static inline void   swkbdConfigMakePresetDefault(SwkbdConfig *c)            { (void)c; }
-static inline void   swkbdConfigSetInitialText(SwkbdConfig *c, const char *s){ (void)c; (void)s; }
-static inline void   swkbdConfigSetStringLenMax(SwkbdConfig *c, u32 n)       { (void)c; (void)n; }
-static inline Result swkbdShow(SwkbdConfig *c, char *out, size_t len)        { (void)c; if (out && len) out[0] = 0; return 1; }
-static inline void   swkbdClose(SwkbdConfig *c)                              { (void)c; }
+// software keyboard (IME): backed by a controller-driven on-screen keyboard
+// rendered over the GL surface (portmaster/osk.c). SwkbdConfig carries the
+// initial text + max length; swkbdShow() runs the blocking OSK and returns the
+// entered string (R_SUCCEEDED) or a non-zero Result on cancel.
+typedef struct { char initial[256]; int maxlen; } SwkbdConfig;
+Result swkbdCreate(SwkbdConfig *c, int n);
+void   swkbdConfigMakePresetDefault(SwkbdConfig *c);
+void   swkbdConfigSetInitialText(SwkbdConfig *c, const char *s);
+void   swkbdConfigSetStringLenMax(SwkbdConfig *c, u32 n);
+Result swkbdShow(SwkbdConfig *c, char *out, size_t len);
+void   swkbdClose(SwkbdConfig *c);
+// register cocos2d::GL::invalidateStateCache so the OSK can hand GL state back to
+// the engine after drawing (set once at boot, like movie_set_gl_invalidate).
+void   osk_set_gl_invalidate(void (*fn)(void));
 
 #endif // CT_SWITCH_COMPAT_H

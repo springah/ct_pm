@@ -658,6 +658,9 @@ int main(void) {
   jni_set_ime_cb((ImeInsertFn)e_insertText, (ImeDeleteFn)e_deleteBackward);
   jni_set_editbox_cb((EbBeginFn)e_ebDidBegin, (EbTextFn)e_ebChanged, (EbTextFn)e_ebDidEnd);
   movie_set_gl_invalidate(e_glInvalidate);
+#ifndef __SWITCH__
+  osk_set_gl_invalidate(e_glInvalidate); // on-screen keyboard restores cocos GL state too
+#endif
 
   // a persistent device-name jstring for the controller event callbacks
   g_ctrl_name = jni_make_string("Nintendo Switch Controller");
@@ -697,6 +700,21 @@ int main(void) {
   // register controller 0 so Controller::getKeyStatus polling has a target
   if (e_ctrlConnected)
     e_ctrlConnected(fake_env, thiz, g_ctrl_name, 0);
+
+#ifndef __SWITCH__
+  // CT_OSK_TEST: pop the on-screen keyboard at boot so it can be exercised without
+  // navigating to an in-game name field. Type + OK, then check the log for the result.
+  if (getenv("CT_OSK_TEST")) {
+    e_nativeRender(fake_env); os_gfx_swap(); // establish the viewport + a backdrop
+    SwkbdConfig kb; swkbdCreate(&kb, 0);
+    swkbdConfigSetInitialText(&kb, "CRONO");
+    swkbdConfigSetStringLenMax(&kb, 8);
+    char nm[64] = {0};
+    Result rc = swkbdShow(&kb, nm, sizeof(nm));
+    swkbdClose(&kb);
+    os_log("CT_OSK_TEST: rc=%u name='%s'\n", (unsigned)rc, nm);
+  }
+#endif
 
   int paused = 0;
   int boot_frames = 0;
