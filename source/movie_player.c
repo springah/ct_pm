@@ -149,10 +149,14 @@ static int gl_init(GLVid *g) {
 }
 
 static void gl_draw(GLVid *g, const uint8_t *rgba, int vw, int vh) {
-  // letterbox: fit vw x vh inside the surface preserving aspect ratio
+  // cover: scale vw x vh to FILL the surface preserving aspect ratio, letting the
+  // overflowing axis run past the [-1,1] viewport so it's clipped (no distortion).
+  // The cutscenes are ~3:2 on a 16:9 screen, so this crops ~17% off the top/bottom
+  // instead of pillarboxing the sides. (Swap the two assignments below back to
+  // `ey = sa/va` / `ex = va/sa` to return to letterbox/pillarbox.)
   float sa = (float)g->sw / (float)g->sh, va = (float)vw / (float)vh;
   float ex = 1.0f, ey = 1.0f;
-  if (va > sa) ey = sa / va; else ex = va / sa;
+  if (va > sa) ex = va / sa; else ey = sa / va;
   const GLfloat quad[] = {
     -ex,  ey, 0.0f, 0.0f,
     -ex, -ey, 0.0f, 1.0f,
