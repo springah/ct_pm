@@ -487,17 +487,29 @@ typedef struct {
   int      cc_key;     // controller path cocos key, or 0 for none
 } LinKeyMap;
 
+// Nintendo/SNES layout, mapped 1:1 by button LABEL to the engine's own cocos
+// Controller::Key. The engine (GameController::onKeyDown) decodes each key into
+// an internal bit and the game reads only those bits: A(1004)->bit7 Confirm,
+// B(1005)->bit3 Cancel/Dash, X(1007)->bit6 Menu, Y(1008)->bit0 Character-switch/
+// Time-gauge, START(1021)->bit1 Pause, L/R shoulders(1015/16)->bit5/bit4.
+// NOTE the engine's built-in X/Y swap defaults to ON and its in-game remap screen
+// is a touch-only UI we can't reach on this (touchscreen-less) device, so we
+// compensate by CROSSING X/Y here: the top (X) button sends BUTTON_Y and the left
+// (Y) button sends BUTTON_X, which lands Menu on the top button to match SNES.
+// (SELECT(1022), the C/Z/PAUSE keys, triggers and thumb-clicks are NOT decoded by
+// the engine -- so Select has no native binding; the SNES world-map toggle isn't
+// reachable via gamepad. ZL/ZR are kept as triggers in case a later build binds them.)
 static const LinKeyMap g_keymap[] = {
-  { OS_BTN_A,      AK_ENTER,   CC_BTN_A },       // right button: confirm
-  { OS_BTN_B,      AK_BACK,    CC_BTN_B },       // bottom button: cancel
-  { OS_BTN_X,      AK_NONE,    CC_BTN_X },
-  { OS_BTN_Y,      AK_NONE,    0 },              // unused (pause moved to Start)
+  { OS_BTN_A,      AK_ENTER,   CC_BTN_A },       // right button: confirm  (bit7)
+  { OS_BTN_B,      AK_BACK,    CC_BTN_B },       // bottom button: cancel/dash (bit3)
+  { OS_BTN_X,      AK_NONE,    CC_BTN_Y },       // top button: open Menu  (X/Y swap on -> send BUTTON_Y)
+  { OS_BTN_Y,      AK_NONE,    CC_BTN_X },       // left button: char-switch / time-gauge
   { OS_BTN_L,      AK_NONE,    CC_L_SHOULDER },
   { OS_BTN_R,      AK_NONE,    CC_R_SHOULDER },
   { OS_BTN_ZL,     AK_NONE,    CC_L_TRIGGER },
   { OS_BTN_ZR,     AK_NONE,    CC_R_TRIGGER },
-  { OS_BTN_START,  AK_MENU,    CC_BTN_Y },       // Start opens the pause menu (was Switch +)
-  { OS_BTN_SELECT, AK_NONE,    CC_BTN_SELECT },
+  { OS_BTN_START,  AK_NONE,    CC_BTN_START },   // Start: pause/system (bit1)
+  { OS_BTN_SELECT, AK_NONE,    CC_BTN_SELECT },  // engine ignores SELECT (no native binding)
   { OS_BTN_UP,     AK_DUP,     CC_DPAD_UP },     // d-pad bits already include left-stick synthesis
   { OS_BTN_DOWN,   AK_DDOWN,   CC_DPAD_DOWN },
   { OS_BTN_LEFT,   AK_DLEFT,   CC_DPAD_LEFT },
