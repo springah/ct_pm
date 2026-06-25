@@ -547,6 +547,16 @@ static void update_keys(void) {
 }
 
 static void update_touch(void) { /* TSP optional; not needed for menu/field nav */ }
+
+// Re-baseline the controller edge-detector to the buttons currently held. Called
+// when a blocking modal (FMV skip / on-screen keyboard) hands control back, so a
+// button still held to dismiss it isn't re-sent to the engine as a fresh press
+// when the main loop resumes (e.g. skipping the intro must not also advance the
+// title screen into the New Game menu).
+void input_consume_held(void) {
+  os_input_poll(&g_in);
+  g_prev_buttons = g_in.buttons;
+}
 #endif
 
 // ---------------------------------------------------------------------------
@@ -659,7 +669,9 @@ int main(void) {
   jni_set_editbox_cb((EbBeginFn)e_ebDidBegin, (EbTextFn)e_ebChanged, (EbTextFn)e_ebDidEnd);
   movie_set_gl_invalidate(e_glInvalidate);
 #ifndef __SWITCH__
+  movie_set_input_drain(input_consume_held); // FMV skip must not bleed into the engine
   osk_set_gl_invalidate(e_glInvalidate); // on-screen keyboard restores cocos GL state too
+  osk_set_input_drain(input_consume_held); // ...nor the OSK confirm/cancel button
 #endif
 
   // a persistent device-name jstring for the controller event callbacks
@@ -718,6 +730,9 @@ int main(void) {
 
   int paused = 0;
   int boot_frames = 0;
+#ifndef __SWITCH__
+  const int cap_enabled = getenv("CT_CAPTURE") != NULL; // hoist out of the frame loop
+#endif
 #ifdef __SWITCH__
   while (appletMainLoop() && !jni_quit_requested) {
 #else
@@ -753,7 +768,7 @@ int main(void) {
 #else
     // debug: dump frames off the GPU back buffer when CT_CAPTURE is set --
     // early, then periodically, so we can watch it progress splash -> title.
-    if (getenv("CT_CAPTURE")) {
+    if (cap_enabled) {
       if (boot_frames == 60 || (boot_frames > 0 && boot_frames % 300 == 0)) {
         char p[256];
         snprintf(p, sizeof(p), "%s/frame_%05d.ppm", os_data_dir(), boot_frames);
@@ -765,6 +780,30 @@ int main(void) {
 #endif
 
     jni_ime_service(); // show swkbd for a pending EditBox, outside nativeRender
+
+    // FMV transition fix: the movie scenes have no video-completion path — they only
+    // leave on a skip input (cocos KeyCode 6 -> SceneManager::NextScene). Our blocking
+    // movie_play() has no async COMPLETED, so when a clip ends we synthesize that skip
+    // here, on a clean frame boundary outside the engine's startVideo call.
+    if (jni_consume_video_finished()) {
+      // NextScene's destination is chosen by SceneManager's current-scene-id (an int
+      // reached via a pointer at libchrono+0xbc7210), not by the skip itself. The boot
+      // attract plays as a blocking native movie WITHOUT the engine entering
+      // DemoMovieScene, so that id is left on the boot/new-game scene -> the skip walks
+      // into the New Game flow (controls guide -> battle-mode pick). Force the id to
+      // DemoMovieScene (28) so NextScene takes the demo branch (-> replaceScene(
+      // create(3)) = TitleScene). Leave in-game cutscenes (PlayMovieScene, id 29)
+      // alone — they already have the correct destination. (Offset is libchrono v2.1.5.)
+      void **sid_pp = (void **)((uintptr_t)game_mod.load_virtbase + 0xbc7210);
+      if (*sid_pp) {
+        int *sid = (int *)*sid_pp;
+        if (*sid != 29) *sid = 28; // 29 = PlayMovieScene cutscene; don't redirect it
+      }
+      if (e_keyEvent) {
+        e_keyEvent(fake_env, thiz, AK_BACK, 1); // KeyCode 6 == Back/Escape
+        e_keyEvent(fake_env, thiz, AK_BACK, 0);
+      }
+    }
 
 #ifdef __SWITCH__
     if (boot_frames < 10 && ++boot_frames == 10)

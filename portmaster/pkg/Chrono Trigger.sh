@@ -61,6 +61,25 @@ export GAMEDIR
 export CT_FONT_SCALE=1.5   # pixel-font (ChronoType) visual-size scale; tune to taste
 
 $ESUDO chmod +x "$GAMEDIR/ct" 2>/dev/null
+
+# --- CPU: pin the performance governor during play ----------------------------
+# The engine's update+render runs on one thread, so brief vsync idles can let an
+# on-demand/schedutil governor dither the clock down and cause micro-stutter.
+# Pin performance for the session and restore the original governor on exit.
+SAVED_GOV=""
+if [ -r /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor ]; then
+  SAVED_GOV=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null)
+  for g in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do
+    echo performance | $ESUDO tee "$g" >/dev/null 2>&1
+  done
+fi
+
 ./ct > "$GAMEDIR/log.txt" 2>&1
+
+if [ -n "$SAVED_GOV" ]; then
+  for g in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do
+    echo "$SAVED_GOV" | $ESUDO tee "$g" >/dev/null 2>&1
+  done
+fi
 
 printf "\033[H\033[2J"

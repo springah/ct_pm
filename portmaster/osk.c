@@ -33,6 +33,9 @@ void   swkbdClose(SwkbdConfig *c) { (void)c; }
 static void (*g_gl_invalidate)(void); // cocos2d::GL::invalidateStateCache
 void osk_set_gl_invalidate(void (*fn)(void)) { g_gl_invalidate = fn; }
 
+static void (*g_input_drain)(void); // host: re-baseline the input edge-detector
+void osk_set_input_drain(void (*fn)(void)) { g_input_drain = fn; }
+
 // ---------------------------------------------------------------------------
 // GL: one tinted-textured-quad program; a 1x1 white texture stands in for solids.
 // ---------------------------------------------------------------------------
@@ -233,6 +236,13 @@ Result swkbdShow(SwkbdConfig *c, char *out, size_t len) {
   g_vw = vp[2] > 0 ? vp[2] : 1280;
   g_vh = vp[3] > 0 ? vp[3] : 720;
 
+  // Snapshot the engine's GL enable-caps; the OSK toggles depth/cull/blend and
+  // leaves attrib arrays enabled. invalidateStateCache won't restore the caps,
+  // so save them here and put them back exactly before returning to the engine.
+  GLboolean sv_depth = glIsEnabled(GL_DEPTH_TEST);
+  GLboolean sv_cull  = glIsEnabled(GL_CULL_FACE);
+  GLboolean sv_blend = glIsEnabled(GL_BLEND);
+
   g_shift = 0; g_sel = 0;
   build_keys();
 
@@ -319,7 +329,13 @@ Result swkbdShow(SwkbdConfig *c, char *out, size_t len) {
   for (int i = 0; i < g_nkeys; i++) tex_free(&g_keys[i].tex);
   g_nkeys = 0;
   glPixelStorei(GL_UNPACK_ALIGNMENT, 4); // back to GL default for the engine
+  glDisableVertexAttribArray(g_aPos);
+  glDisableVertexAttribArray(g_aTex);
+  if (sv_depth) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
+  if (sv_cull)  glEnable(GL_CULL_FACE);  else glDisable(GL_CULL_FACE);
+  if (sv_blend) glEnable(GL_BLEND);      else glDisable(GL_BLEND);
   glUseProgram(0);
   if (g_gl_invalidate) g_gl_invalidate(); // we changed GL state behind cocos's back
+  if (g_input_drain) g_input_drain(); // drop the button still held to confirm/cancel
   return result == 0 ? 0 : 1;
 }

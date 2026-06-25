@@ -439,6 +439,13 @@ static int create_text_bitmap(va_list va) {
 #define VIDEO_EVENT_COMPLETED 3
 static int g_video_next_index = 0;
 static char g_video_url[512];
+static int g_video_finished = 0; // set when a blocking clip ends; serviced by the main loop
+
+// The movie scenes (Demo/PlayMovieScene) have no video-completion handler — they
+// only leave on a skip input. Our movie_play() is blocking with no async COMPLETED,
+// so the main loop must synthesize that skip once a clip ends. Returns (and clears)
+// whether a clip just finished.
+int jni_consume_video_finished(void) { int v = g_video_finished; g_video_finished = 0; return v; }
 
 static int video_dispatch_int(const char *name) {
   if (!strcmp(name, "createVideoWidget"))
@@ -459,6 +466,8 @@ static void video_dispatch_void(const char *name, va_list va) {
     if (g_video_url[0])
       movie_play(g_video_url); // blocking: runs to clip end or skip (A/B/+)
     if (g_video_cb) g_video_cb(fake_env, NULL, idx, VIDEO_EVENT_COMPLETED);
+    g_video_finished = 1; // the movie scene won't advance on its own — the main
+                          // loop synthesizes the skip the engine waits for.
     return;
   }
   (void)va; // removeVideoWidget/setVideoRect/seek/visible/etc: no-op

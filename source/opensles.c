@@ -402,8 +402,12 @@ static SLresult bq_GetState(void *self, void *pState) {
 
 static SLresult bq_RegisterCallback(void *self, slBufferQueueCallback cb, void *ctx) {
   Player *p = CONTAINER(self, Player, bq_vt);
+  // Pair the cb/cb_ctx update under the lock the mix thread reads them with, so
+  // it can't observe a torn (new cb, old ctx) combination mid-playback.
+  SDL_LockMutex(p->lock);
   p->cb = cb;
   p->cb_ctx = ctx;
+  SDL_UnlockMutex(p->lock);
   return SL_RESULT_SUCCESS;
 }
 
@@ -539,6 +543,12 @@ static SLresult eng_CreateAudioPlayer(void *self, SLObjectItf *pPlayer, SLDataSo
   p->channels = 2;
   p->rate = 44100;
   p->lock = SDL_CreateMutex();
+  if (!p->lock) {
+    // Out of memory: never register a player the audio callback can't lock
+    // (SDL_LockMutex(NULL) gives no protection and can crash on the mix thread).
+    free(p);
+    return SL_RESULT_PARAMETER_INVALID;
+  }
 
   if (src && src->pFormat) {
     const SLDataFormat_PCM *fmt = src->pFormat;

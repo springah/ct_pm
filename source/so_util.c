@@ -128,8 +128,17 @@ int so_load(so_module *mod, const char *filename, void *base, size_t max_size) {
     return -1;
 
   fseek(fd, 0, SEEK_END);
-  mod->so_size = ftell(fd);
+  long so_sz = ftell(fd);
   fseek(fd, 0, SEEK_SET);
+  if (so_sz < (long)SELFMAG) {
+    // ftell failed (-1) or the file is too small to be an ELF: a truncated or
+    // corrupt user-supplied libchrono.so. Fail cleanly instead of malloc((size_t)-1)
+    // / parsing garbage ELF offsets and crashing somewhere deep.
+    debugPrintf("so_load: %s: bad or empty file (size=%ld)\n", filename, so_sz);
+    fclose(fd);
+    return -1;
+  }
+  mod->so_size = (size_t)so_sz;
 
   mod->so_base = malloc(mod->so_size);
   if (!mod->so_base) {
@@ -137,7 +146,14 @@ int so_load(so_module *mod, const char *filename, void *base, size_t max_size) {
     return -2;
   }
 
-  fread(mod->so_base, mod->so_size, 1, fd);
+  if (fread(mod->so_base, mod->so_size, 1, fd) != 1) {
+    // short read: truncated download/SD copy. Don't parse the partial buffer.
+    debugPrintf("so_load: %s: short read (truncated or corrupt file)\n", filename);
+    free(mod->so_base);
+    mod->so_base = NULL;
+    fclose(fd);
+    return -1;
+  }
   fclose(fd);
 
   if (memcmp(mod->so_base, ELFMAG, SELFMAG) != 0) {

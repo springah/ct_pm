@@ -17,4 +17,9 @@ int movie_play(const char *name);
 // cache after a movie.
 void movie_set_gl_invalidate(void (*fn)(void));
 
+// Register a callback run when the movie hands control back to the engine, so the
+// host can re-baseline its input edge-detector and drop a button still held to
+// skip the clip (otherwise the main loop reports it to the game as a fresh press).
+void movie_set_input_drain(void (*fn)(void));
+
 #endif

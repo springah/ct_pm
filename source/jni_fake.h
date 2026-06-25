@@ -62,4 +62,9 @@ void jni_set_editbox_cb(EbBeginFn begin, EbTextFn changed, EbTextFn ended);
 // frame from the main loop; swkbd is a blocking system applet).
 void jni_ime_service(void);
 
+// Returns (and clears) whether a blocking FMV clip just finished, so the main loop
+// can synthesize the skip input the movie scene needs to advance (it has no
+// video-completion path of its own).
+int jni_consume_video_finished(void);
+
 #endif

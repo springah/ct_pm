@@ -90,5 +90,8 @@ void   swkbdClose(SwkbdConfig *c);
 // register cocos2d::GL::invalidateStateCache so the OSK can hand GL state back to
 // the engine after drawing (set once at boot, like movie_set_gl_invalidate).
 void   osk_set_gl_invalidate(void (*fn)(void));
+// register a callback run when the OSK hands control back, so the host can drop a
+// button still held to dismiss it (mirrors movie_set_input_drain).
+void   osk_set_input_drain(void (*fn)(void));
 
 #endif // CT_SWITCH_COMPAT_H

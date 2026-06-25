@@ -20,7 +20,7 @@ if [ ! -f "$FFPREFIX/include/libavformat/avformat.h" ]; then
   exit 1
 fi
 
-CF="-O2 -g -march=armv8-a -Iportmaster -Isource \
+CF="-O3 -g -mcpu=cortex-a53 -Iportmaster -Isource \
     $(sdl2-config --cflags) $(pkg-config --cflags freetype2) -I$FFPREFIX/include"
 
 SRC="portmaster/os_linux.c portmaster/compat_libc.c portmaster/osk.c \

@@ -39,6 +39,9 @@ static void (*g_gl_invalidate)(void); // cocos2d::GL::invalidateStateCache
 
 void movie_set_gl_invalidate(void (*fn)(void)) { g_gl_invalidate = fn; }
 
+static void (*g_input_drain)(void); // host: re-baseline the input edge-detector
+void movie_set_input_drain(void (*fn)(void)) { g_input_drain = fn; }
+
 // Read the whole movie by asset name, undoing the .dat XOR obfuscation.
 static uint8_t *read_movie(const char *name, int *out_size) {
   if (!name || !name[0])
@@ -189,6 +192,10 @@ static void gl_free(GLVid *g) {
   if (g->prog) glDeleteProgram(g->prog);
   if (g->vs) glDeleteShader(g->vs);
   if (g->fs) glDeleteShader(g->fs);
+  // Leave no vertex-attrib arrays enabled behind cocos's back: invalidateStateCache
+  // re-syncs its tracked program/blendfunc/texture but not attrib-array enables.
+  if (g->aPos >= 0) glDisableVertexAttribArray(g->aPos);
+  if (g->aTex >= 0) glDisableVertexAttribArray(g->aTex);
   glUseProgram(0);
 }
 
@@ -238,6 +245,12 @@ int movie_play(const char *name) {
   AVFrame *frame = NULL;
   int vidx = -1, aidx = -1, vw = 0, vh = 0, dev_rate = 48000;
   GLVid gl; int gl_ok = 0;
+  // Snapshot the engine's GL enable-caps so we can restore exactly what it had.
+  // The cutscene path disables depth-test/blend; invalidateStateCache won't put
+  // them back, so a cutscene would otherwise leave blending off -> opaque sprites
+  // on the next 2D frames. (Context is current here; safe before the loop.)
+  GLboolean sv_depth = glIsEnabled(GL_DEPTH_TEST);
+  GLboolean sv_blend = glIsEnabled(GL_BLEND);
   MemBuf mem = { mdata, msize, 0 };
 #ifdef __SWITCH__
   PadState pad;
@@ -249,9 +262,11 @@ int movie_play(const char *name) {
 #endif
 
   unsigned char *iobuf = av_malloc(65536);
+  if (!iobuf) goto done;
   avio = avio_alloc_context(iobuf, 65536, 0, &mem, mem_read, NULL, mem_seek);
-  if (!avio) goto done;
+  if (!avio) { av_free(iobuf); goto done; } // avio owns iobuf only on success
   fmt = avformat_alloc_context();
+  if (!fmt) goto done;
   fmt->pb = avio;
   if (avformat_open_input(&fmt, NULL, NULL, NULL) < 0) { debugPrintf("movie: open_input failed\n"); goto done; }
   if (avformat_find_stream_info(fmt, NULL) < 0) { debugPrintf("movie: no stream info\n"); goto done; }
@@ -350,7 +365,11 @@ int movie_play(const char *name) {
 
 done:
   if (gl_ok) gl_free(&gl);
+  // Restore the depth/blend enables to whatever the engine had on entry.
+  if (sv_depth) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
+  if (sv_blend) glEnable(GL_BLEND);      else glDisable(GL_BLEND);
   if (g_gl_invalidate) g_gl_invalidate(); // we changed GL state behind cocos's back
+  if (g_input_drain) g_input_drain(); // drop the button still held to skip the clip
   opensles_movie_end();
   if (pkt) av_packet_free(&pkt);
   if (frame) av_frame_free(&frame);

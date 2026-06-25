@@ -321,6 +321,40 @@ void os_input_poll(os_input_state *st) {
     if (ly < -OS_STICK_DEADZONE) b |= OS_BTN_UP;
     if (ly >  OS_STICK_DEADZONE) b |= OS_BTN_DOWN;
 
+    // -- CT_STICKLOG: left-stick Y diagnostic -------------------------------
+    // The TrimUI pad (GUID 0300...02000000) is isGC=1 via the PortMaster
+    // framework's gamecontrollerdb, so our fallback mapping is NOT applied and
+    // the stick Y comes out wrong (down dead / reads as up). Set CT_STICKLOG=1
+    // to dump the *mapped* LEFTX/LEFTY (post-gamecontrollerdb), the synthesised
+    // d-pad bits, and EVERY raw joystick axis a0..aN. Wiggle the stick, capture
+    // log.txt, and read off which physical axis the stick Y is really on and its
+    // sign -> then override the GUID mapping. Throttled to fire only on movement.
+    if (getenv("CT_STICKLOG")) {
+        SDL_Joystick *j = SDL_GameControllerGetJoystick(c);
+        int na = j ? SDL_JoystickNumAxes(j) : 0;
+        if (na > 8) na = 8;
+        int raw[8] = {0};
+        for (int k = 0; k < na; k++) raw[k] = SDL_JoystickGetAxis(j, k);
+        static int prev_raw[8], prev_lx, prev_ly, have_prev;
+        int moved = !have_prev || abs(lx - prev_lx) > 1500 || abs(ly - prev_ly) > 1500;
+        for (int k = 0; k < na && !moved; k++)
+            if (abs(raw[k] - prev_raw[k]) > 1500) moved = 1;
+        if (moved) {
+            char rbuf[160]; int p = 0;
+            for (int k = 0; k < na; k++)
+                p += snprintf(rbuf + p, (size_t)(sizeof(rbuf) - p), " a%d=%6d", k, raw[k]);
+            os_log("stick: mapLX=%6d mapLY=%6d dpad[%c%c%c%c]%s\n",
+                   lx, ly,
+                   (b & OS_BTN_UP)    ? 'U' : '.',
+                   (b & OS_BTN_DOWN)  ? 'D' : '.',
+                   (b & OS_BTN_LEFT)  ? 'L' : '.',
+                   (b & OS_BTN_RIGHT) ? 'R' : '.',
+                   rbuf);
+            for (int k = 0; k < na; k++) prev_raw[k] = raw[k];
+            prev_lx = lx; prev_ly = ly; have_prev = 1;
+        }
+    }
+
     // Quit hotkey (reliable, native — no gptokeyb grab): Start+Select (universal),
     // Start+Guide (if the menu button maps to the gamepad guide), or the hardware
     // MENU key (separate evdev) + Start. Any of these requests a clean quit.
@@ -333,11 +367,16 @@ void os_input_poll(os_input_state *st) {
     }
 
     st->buttons = b;
-    // Normalise to -1..1; SDL Y axes are +down, the engine wants +up, so negate Y.
-    st->lx =  lx / 32768.0f;
-    st->ly = -ly / 32768.0f;
-    st->rx =  rx / 32768.0f;
-    st->ry = -ry / 32768.0f;
+    // Normalise to -1..1. The engine's CC_JOY_LY convention is "up = negative":
+    // the Switch path sends -l.y where Nintendo reports +y=up, i.e. UP -> -1.0.
+    // SDL already reports up as a NEGATIVE Y, so we pass it through UN-negated to
+    // match (UP -> -1.0). Do NOT negate Y here — doing so double-flips it, leaving
+    // the analog axis fighting the (correct) stick-as-dpad bits so vertical cancels
+    // out (left/right fine, up/down dead). X needs no flip: SDL & Nintendo agree.
+    st->lx = lx / 32768.0f;
+    st->ly = ly / 32768.0f;
+    st->rx = rx / 32768.0f;
+    st->ry = ry / 32768.0f;
 }
 
 // ===========================================================================
