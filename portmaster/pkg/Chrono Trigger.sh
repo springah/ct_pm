@@ -62,6 +62,24 @@ export CT_FONT_SCALE=1.5   # pixel-font (ChronoType) visual-size scale; tune to 
 
 $ESUDO chmod +x "$GAMEDIR/ct" 2>/dev/null
 
+# --- RAM: add compressed swap (zram) for the session --------------------------
+# This box is 1 GB with no swap. The engine peaks well past that when a heavy
+# scene loads right after the attract FMV (whose decoder heap is still resident),
+# and the kernel OOM-kills the game. A ~768 MB zram device gives that spike a
+# compressed-RAM overflow to land in instead of dying. Torn down on exit.
+ZRAM_DEV=""
+$ESUDO modprobe zram >/dev/null 2>&1   # built as a module on this kernel (4.9.x)
+if [ -e /sys/class/zram-control/hot_add ] && [ -z "$(cat /proc/swaps | grep zram)" ]; then
+  ZN=$(cat /sys/class/zram-control/hot_add 2>/dev/null)
+  if [ -n "$ZN" ] && [ -e "/sys/block/zram${ZN}/disksize" ]; then
+    echo lz4 | $ESUDO tee "/sys/block/zram${ZN}/comp_algorithm" >/dev/null 2>&1
+    echo $((768 * 1024 * 1024)) | $ESUDO tee "/sys/block/zram${ZN}/disksize" >/dev/null 2>&1
+    if $ESUDO mkswap "/dev/zram${ZN}" >/dev/null 2>&1 && $ESUDO swapon -p 100 "/dev/zram${ZN}" >/dev/null 2>&1; then
+      ZRAM_DEV="$ZN"
+    fi
+  fi
+fi
+
 # --- CPU: pin the performance governor during play ----------------------------
 # The engine's update+render runs on one thread, so brief vsync idles can let an
 # on-demand/schedutil governor dither the clock down and cause micro-stutter.
@@ -81,6 +99,11 @@ if [ -n "$SAVED_GOV" ]; then
   for g in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do
     echo "$SAVED_GOV" | $ESUDO tee "$g" >/dev/null 2>&1
   done
+fi
+
+if [ -n "$ZRAM_DEV" ]; then
+  $ESUDO swapoff "/dev/zram${ZRAM_DEV}" >/dev/null 2>&1
+  echo "$ZRAM_DEV" | $ESUDO tee /sys/class/zram-control/hot_remove >/dev/null 2>&1
 fi
 
 printf "\033[H\033[2J"

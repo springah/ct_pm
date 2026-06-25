@@ -20,6 +20,9 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdint.h>
+#if !defined(__SWITCH__) && defined(__GLIBC__)
+#include <malloc.h> // malloc_trim: hand the decoder's freed heap back to the OS
+#endif
 
 #include <EGL/egl.h>
 #include <GLES2/gl2.h>
@@ -387,5 +390,13 @@ done:
   free(apcm);
   free(mdata);
   cpu_boost(0);
+#if !defined(__SWITCH__) && defined(__GLIBC__)
+  // The H.264 decoder (thread_count=3) churns through tens of MB of small
+  // allocations. free() returns them to glibc's arena but not to the kernel, so
+  // the process RSS stays inflated after the clip — and on a 1 GB handheld the
+  // next scene load lands on top of that residue and OOM-kills us. Force glibc to
+  // release the freed heap before control returns to the engine.
+  malloc_trim(0);
+#endif
   return 1;
 }
