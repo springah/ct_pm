@@ -80,15 +80,24 @@ if [ -e /sys/class/zram-control/hot_add ] && [ -z "$(cat /proc/swaps | grep zram
   fi
 fi
 
-# --- CPU: pin the performance governor during play ----------------------------
-# The engine's update+render runs on one thread, so brief vsync idles can let an
-# on-demand/schedutil governor dither the clock down and cause micro-stutter.
-# Pin performance for the session and restore the original governor on exit.
+# --- CPU: balance battery vs smoothness ---------------------------------------
+# CT is a light 2D RPG and vsync-capped, so pinning all cores to max frequency
+# (performance) for the whole session just burns battery through menus, dialogue
+# and vsync idles. Instead use schedutil (scales with load) but raise the min-freq
+# FLOOR so a brief idle can't dither the clock down to the bottom and cause the
+# micro-stutter the old `performance` pin was guarding against. High clocks only
+# when the game actually needs them. Original governor + min-freq restored on exit.
+# Tunables: CT_GOV (governor), CT_MIN_KHZ (floor). Set CT_GOV=performance to revert.
+PLAY_GOV="${CT_GOV:-schedutil}"
+PLAY_MIN_KHZ="${CT_MIN_KHZ:-1008000}"   # keep it from dithering below ~1.0 GHz mid-frame
 SAVED_GOV=""
+SAVED_MIN=""
 if [ -r /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor ]; then
   SAVED_GOV=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null)
-  for g in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do
-    echo performance | $ESUDO tee "$g" >/dev/null 2>&1
+  SAVED_MIN=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq 2>/dev/null)
+  for p in /sys/devices/system/cpu/cpu*/cpufreq; do
+    echo "$PLAY_MIN_KHZ" | $ESUDO tee "$p/scaling_min_freq" >/dev/null 2>&1
+    echo "$PLAY_GOV"     | $ESUDO tee "$p/scaling_governor" >/dev/null 2>&1
   done
 fi
 
@@ -96,8 +105,9 @@ pm_platform_helper "$GAMEDIR/ct"
 ./ct > "$GAMEDIR/log.txt" 2>&1
 
 if [ -n "$SAVED_GOV" ]; then
-  for g in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do
-    echo "$SAVED_GOV" | $ESUDO tee "$g" >/dev/null 2>&1
+  for p in /sys/devices/system/cpu/cpu*/cpufreq; do
+    echo "$SAVED_GOV" | $ESUDO tee "$p/scaling_governor" >/dev/null 2>&1
+    [ -n "$SAVED_MIN" ] && echo "$SAVED_MIN" | $ESUDO tee "$p/scaling_min_freq" >/dev/null 2>&1
   done
 fi
 
