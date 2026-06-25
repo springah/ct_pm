@@ -346,18 +346,20 @@ typedef struct {
 } KeyMap;
 
 #ifdef __SWITCH__
-// Nintendo-native: A (right) confirms, B (bottom) cancels.
+// Nintendo/SNES layout (mirrors the Linux LinKeyMap): A=confirm, B=cancel/dash,
+// X=Menu, Y=char-switch/time-gauge, +=Pause. The engine's X/Y swap defaults to ON,
+// so X/Y are CROSSED here (top X -> CC_BTN_Y lands Menu on top to match SNES).
 static const KeyMap g_keymap[] = {
   { HidNpadButton_A,     AK_ENTER,   CC_BTN_A },
   { HidNpadButton_B,     AK_BACK,    CC_BTN_B },
-  { HidNpadButton_X,     AK_NONE,    CC_BTN_X },
-  { HidNpadButton_Y,     AK_NONE,    0 },        // unused (pause menu moved to +)
+  { HidNpadButton_X,     AK_NONE,    CC_BTN_Y },  // top: open Menu (X/Y swap on -> send BUTTON_Y)
+  { HidNpadButton_Y,     AK_NONE,    CC_BTN_X },  // left: char-switch / time-gauge
   { HidNpadButton_L,     AK_NONE,    CC_L_SHOULDER },
   { HidNpadButton_R,     AK_NONE,    CC_R_SHOULDER },
   { HidNpadButton_ZL,    AK_NONE,    CC_L_TRIGGER },
   { HidNpadButton_ZR,    AK_NONE,    CC_R_TRIGGER },
-  { HidNpadButton_Plus,  AK_MENU,    CC_BTN_Y },  // + opens the pause menu (was Y)
-  { HidNpadButton_Minus, AK_NONE,    CC_BTN_SELECT },
+  { HidNpadButton_Plus,  AK_NONE,    CC_BTN_START },  // + : pause/system (bit1)
+  { HidNpadButton_Minus, AK_NONE,    CC_BTN_SELECT },  // engine ignores SELECT
   { HidNpadButton_StickL, AK_NONE,   CC_L_THUMB },
   { HidNpadButton_StickR, AK_NONE,   CC_R_THUMB },
   { HidNpadButton_Up    | HidNpadButton_StickLUp,    AK_DUP,    CC_DPAD_UP },
