@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<!-- EmulationStation metadata. NOTE: not used by the Multiverse submission (PortMaster
+     generates ES metadata itself; the MV zip contains no gameinfo.xml). Kept for
+     completeness / a possible PortMaster-New cross-list. -->
+<gameList>
+    <game>
+        <path>./Chrono Trigger.sh</path>
+        <name>Chrono Trigger</name>
+        <desc>The Android version of Chrono Trigger, run natively via the ct_nx loader. A time-spanning JRPG by Square: a band of heroes travels across distant eras to stop a cataclysm born of the creature Lavos. Runs the cocos2d-x engine on SDL2 + GLES2 with bundled FFmpeg cutscenes; you supply the game files from your own legally-owned Chrono Trigger Android APK (v2.1.5).</desc>
+        <releasedate>19950311T000000</releasedate>
+        <developer>Square</developer>
+        <publisher>Square Enix</publisher>
+        <genre>Role-Playing Game</genre>
+        <players>1</players>
+        <image>./ct/screenshot.png</image>
+    </game>
+</gameList>
