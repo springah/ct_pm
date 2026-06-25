@@ -136,8 +136,10 @@ Platform deltas vs the Switch build (all in `movie_player.c`, behind `#ifdef __S
 
 ### Bundled FFmpeg (decode-only, LGPL)
 The device (Knulli) ships FFmpeg 7.x, but for portability across PortMaster devices
-we **bundle** a minimal decode-only FFmpeg 7.1.1 in `pkg/ct/libs/` and load it via the
-launcher's `LD_LIBRARY_PATH=$GAMEDIR/libs`. Built with `portmaster/ffmpeg-build.sh`
+we **bundle** a minimal decode-only FFmpeg 7.1.1 in `pkg/ct/libs.aarch64/` and load it via
+the launcher's `LD_LIBRARY_PATH=$GAMEDIR/libs.${DEVICE_ARCH}` (PortMaster sets
+DEVICE_ARCH=aarch64; the per-arch `libs.<arch>` folder is the PortMaster convention).
+Built with `portmaster/ffmpeg-build.sh`
 (mov demux + h264/hevc/aac decode + swscale + swresample; ~3.8 MB, sonames .61/.59/.8/.5).
 The only external NEEDED are libc/libm/libpthread/ld-linux (present everywhere).
 Note: enabling **hevc** is required even though cutscenes are h264 — h264's SEI parser
@@ -151,7 +153,20 @@ LGPL: unmodified, dynamically linked. `pkg/ct/licenses/FFmpeg-COPYING.LGPLv2.1.t
 `portmaster/build.sh` compiles `source/movie_player.c` (NOT movie_stub) and links
 `-lavformat -lavcodec -lswscale -lswresample -lavutil` from `$FFPREFIX`. Run it in the
 builder with the ffmpeg prefix mounted at `/ff`. Then copy the 5 `.so.*` from the
-ffmpeg build into `pkg/ct/libs/` named by soname (these are gitignored build artifacts).
+ffmpeg build into `pkg/ct/libs.aarch64/` named by soname (these are gitignored build artifacts).
+
+### Packaging (PortMaster zip)
+`portmaster/package.sh [ct-binary]` assembles a PortMaster-installable `ct.zip` from
+`pkg/` + the built `ct` (whitelist staging, so the user's commercial files and dev cruft
+can't leak). Zip extracts to `/roms/ports/`: `Chrono Trigger.sh` + `ct/{port.json, ct,
+font.ttf, screenshot.png, libs.aarch64/, licenses/}`. port.json is `version 2`, `name
+"ct.zip"`, `rtr false`, `runtime null`, `arch ["aarch64"]` (the Half-Life template — the
+canonical native, user-supplied-commercial-files port). This is the self-host / on-device
+zip; an OFFICIAL PortMaster submission is built by `tools/build_release.py` in a
+PortMaster-New fork from the repo-layout tree (metadata + README.md + gameinfo.xml at the
+port top level) and needs a 4:3 gameplay screenshot + multi-CFW testing — see the packaging
+gap-analysis. Launcher uses the framework helpers `get_controls`, `pm_platform_helper`,
+`pm_finish` (all provided by control.txt/funcs.txt/mod_<cfw>.txt).
 
 ### Verification (2026-06-24)
 `portmaster/movie_probe.c` — a headless decode smoke test (no display, no engine):
@@ -179,5 +194,8 @@ diagonally (even-width ones look fine — the giveaway). Verified on the TrimUI:
 `pkg/ct/screenshot.png` is referenced by port.json. It's generated from the user's own game,
 not committed (the repo ships no game art — same stance as the .so/assets): boot with
 `CT_CAPTURE=1` (writes frame_NNNNN.ppm + latest.ppm every 300 frames via os_gfx_capture),
-let the title sequence finish (~50s to the full CHRONO TRIGGER logo), then
-`Image.open('latest.ppm').resize((640,360)).save('screenshot.png')`. Ships in the release zip.
+then capture an **in-game (field/battle)** frame — PortMaster requires a **4:3,
+≥640×480 gameplay** screenshot (NOT the 16:9 title). e.g.
+`Image.open('latest.ppm').resize((640,480)).save('screenshot.png')` from a gameplay frame.
+Ships in the zip (assembled by `portmaster/package.sh`). ⚠️ the current screenshot is the
+old 16:9 640x360 title shot and must be re-captured before any official submission.

@@ -1,9 +1,9 @@
 {
-    "version": 3,
-    "name": "ct",
+    "version": 2,
+    "name": "ct.zip",
     "items": [
         "Chrono Trigger.sh",
-        "ct"
+        "ct/"
     ],
     "items_opt": [],
     "attr": {
@@ -20,13 +20,11 @@
         "image": {
             "screenshot": "screenshot.png"
         },
-        "rtr": true,
-        "mono": false,
-        "exp": false,
+        "rtr": false,
+        "runtime": null,
         "arch": [
             "aarch64"
         ],
-        "min_glibc": "2.31",
         "reqs": []
     }
 }

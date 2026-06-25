@@ -13,13 +13,15 @@ portmaster/_so/
 
 # the built Linux binary + debug captures
 /ct
+/ct.zip
 /movie_probe
 portmaster/pkg/ct/ct
 *.ppm
 frame_*
+.DS_Store
 
 # bundled FFmpeg libs (build artifacts — reproduce via portmaster/ffmpeg-build.sh)
-portmaster/pkg/ct/libs/
+portmaster/pkg/ct/libs.aarch64/
 
 # port screenshot (generated from the user's own game via CT_CAPTURE)
 portmaster/pkg/ct/screenshot.png

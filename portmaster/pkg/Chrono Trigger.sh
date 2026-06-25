@@ -55,7 +55,7 @@ if [ ! -f "$GAMEDIR/fonts/standard.ttf" ]; then
 fi
 
 # --- exports ------------------------------------------------------------------
-export LD_LIBRARY_PATH="$GAMEDIR/libs:$LD_LIBRARY_PATH"
+export LD_LIBRARY_PATH="$GAMEDIR/libs.${DEVICE_ARCH}:$LD_LIBRARY_PATH"
 export SDL_GAMECONTROLLERCONFIG="$sdl_controllerconfig"   # framework pad mapping
 export GAMEDIR
 export CT_FONT_SCALE=1.5   # pixel-font (ChronoType) visual-size scale; tune to taste
@@ -74,6 +74,7 @@ if [ -r /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor ]; then
   done
 fi
 
+pm_platform_helper "$GAMEDIR/ct"
 ./ct > "$GAMEDIR/log.txt" 2>&1
 
 if [ -n "$SAVED_GOV" ]; then
@@ -83,3 +84,4 @@ if [ -n "$SAVED_GOV" ]; then
 fi
 
 printf "\033[H\033[2J"
+pm_finish
