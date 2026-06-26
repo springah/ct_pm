@@ -402,6 +402,12 @@ bool os_is_focused(void) {
 void os_sleep_ms(unsigned ms) { usleep((useconds_t)ms * 1000u); }
 
 void os_log(const char *fmt, ...) {
+    // Quiet by default for release builds; export CT_LOG=1 to restore the
+    // startup/input/error logging (the crash signal handler in main.c always
+    // logs regardless — that path doesn't go through here).
+    static int en = -1;
+    if (en < 0) en = getenv("CT_LOG") ? 1 : 0;
+    if (!en) return;
     va_list ap; va_start(ap, fmt);
     vfprintf(stderr, fmt, ap);
     va_end(ap);

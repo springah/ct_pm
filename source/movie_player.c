@@ -32,6 +32,7 @@
 #include <libswscale/swscale.h>
 #include <libswresample/swresample.h>
 #include <libavutil/channel_layout.h>
+#include <libavutil/log.h>
 
 #include "movie_player.h"
 #include "opensles.h"
@@ -232,6 +233,14 @@ static int skip_pressed(void) {
 #endif
 
 int movie_play(const char *name) {
+  // Silence ffmpeg's decode chatter (codec probe / swscaler INFO) in release;
+  // CT_LOG=1 restores it for debugging. Global + idempotent, set once.
+  static int log_set = 0;
+  if (!log_set) {
+    av_log_set_level(getenv("CT_LOG") ? AV_LOG_INFO : AV_LOG_QUIET);
+    log_set = 1;
+  }
+
   int msize = 0;
   uint8_t *mdata = read_movie(name, &msize);
   if (!mdata) {
