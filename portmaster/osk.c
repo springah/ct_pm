@@ -92,7 +92,9 @@ typedef struct { GLuint tex; int w, h; } Tex;
 static Tex text_tex(const char *s, int fs) {
   int w = 0, h = 0;
   unsigned char *px = gfx_render_text_rgba(s, fs, 255, 255, 255, 255,
-                                           GFX_ALIGN_LEFT, 0, 0, 0, &w, &h);
+                                           GFX_ALIGN_LEFT, 0, 0, 0,
+                                           0, 0.0, 0.0, 0.0, /* OSK requests none; force-mode default still applies */
+                                           &w, &h);
   Tex t = { 0, 0, 0 };
   if (!px || w <= 0 || h <= 0) { free(px); return t; }
   glGenTextures(1, &t.tex); glBindTexture(GL_TEXTURE_2D, t.tex);

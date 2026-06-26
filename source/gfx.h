@@ -24,9 +24,16 @@ void gfx_init(void);
 // *out_w * *out_h * 4 bytes (byte order R,G,B,A). r/g/b/a are the 0-255 fill
 // colour. max_w / max_h are the requested constraint box (0 = size to content).
 // wrap enables greedy word wrapping to max_w. Returns NULL on failure.
+//
+// shadow/shadow_dx/shadow_dy/shadow_opacity carry the engine's
+// createTextBitmapShadowStroke drop-shadow request (SNES-style). They are only
+// honoured in CT_TEXT_SHADOW "auto" mode; "force" mode overrides them with the
+// env-supplied offset/opacity and "off" disables the shadow entirely.
 unsigned char *gfx_render_text_rgba(const char *text, int font_size,
                                     int r, int g, int b, int a,
                                     int align_h, int max_w, int max_h, int wrap,
+                                    int shadow, double shadow_dx, double shadow_dy,
+                                    double shadow_opacity,
                                     int *out_w, int *out_h);
 
 #endif

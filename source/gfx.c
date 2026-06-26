@@ -6,6 +6,7 @@
 
 #include <stdlib.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 #ifdef __SWITCH__
 #include <switch.h>
@@ -26,6 +27,19 @@ static int g_face_count = 0;
 static int g_ok = 0;
 static float g_font_scale = 1.0f;
 
+// Text drop-shadow (the classic SNES-style offset). Mode:
+//   0 = off    : never draw a shadow
+//   1 = auto   : honour the engine's createTextBitmapShadowStroke request
+//   2 = force  : always draw, using the offset/opacity below (final pixels)
+// Default = force, 2px down-right at 80% black: the SNES look. (1px reads too thin
+// on a 640x480 panel, ~2.5x the SNES's native width.) Override at runtime via env
+// CT_TEXT_SHADOW = "off" | "auto" | "force" | "dx,dy,opacity" (a numeric triple
+// implies force; offsets are final on-screen pixels, opacity is 0..1).
+static int   g_shadow_mode = 2;     // default: force the SNES-style drop-shadow
+static float g_shadow_dx   = 2.0f;  // force-mode offset (final pixels)
+static float g_shadow_dy   = 2.0f;
+static float g_shadow_op   = 0.8f;  // force-mode opacity (0..1)
+
 void gfx_init(void) {
   if (FT_Init_FreeType(&g_ft)) {
     debugPrintf("gfx: FT_Init_FreeType failed\n");
@@ -35,6 +49,20 @@ void gfx_init(void) {
 #ifndef __SWITCH__
   { const char *s = getenv("CT_FONT_SCALE");
     if (s) { float v = (float)atof(s); if (v > 0.1f && v < 8.0f) g_font_scale = v; } }
+  { const char *s = getenv("CT_TEXT_SHADOW");
+    if (s) {
+      if (!strcmp(s, "off"))        g_shadow_mode = 0;
+      else if (!strcmp(s, "auto"))  g_shadow_mode = 1;
+      else if (!strcmp(s, "force")) g_shadow_mode = 2;
+      else {
+        float dx, dy, op;
+        if (sscanf(s, "%f,%f,%f", &dx, &dy, &op) == 3) {
+          g_shadow_dx = dx; g_shadow_dy = dy; g_shadow_op = op;
+          g_shadow_mode = 2;   // a numeric triple means "force with these values"
+        }
+      }
+    }
+  }
 #endif
 
 #ifdef __SWITCH__
@@ -124,9 +152,65 @@ static int measure_line(const char *s, const char *end, int px) {
   return w;
 }
 
+// Blit one line's glyph run into `out` in colour (r,g,b,a), shifted by (ox,oy).
+//   over == 0 : keep-strongest-coverage (the original system-font blend; used
+//               for the single-pass, no-shadow case so behaviour is unchanged).
+//   over == 1 : premultiplied source-over (used when layering shadow + text).
+static void draw_line_glyphs(unsigned char *out, int W, int H,
+                             const char *s, const char *end, int rpx,
+                             int pen_x0, int baseline,
+                             int r, int g, int b, int a,
+                             int ox, int oy, int over) {
+  int pen_x = pen_x0;
+  const char *q = s;
+  while (q < end && *q) {
+    uint32_t cp = utf8_next(&q);
+    if (cp == '\n') break;
+    FT_Face f = load_glyph(cp, rpx);
+    if (!f) continue;
+    FT_GlyphSlot sl = f->glyph;
+    const int gx = pen_x + sl->bitmap_left + ox;
+    const int gy = baseline - sl->bitmap_top + oy;
+    for (unsigned ry = 0; ry < sl->bitmap.rows; ry++) {
+      const int dy = gy + (int)ry;
+      if (dy < 0 || dy >= H) continue;
+      const uint8_t *srow = sl->bitmap.buffer + (size_t)ry * sl->bitmap.pitch;
+      for (unsigned rx = 0; rx < sl->bitmap.width; rx++) {
+        const int dx = gx + (int)rx;
+        if (dx < 0 || dx >= W) continue;
+        const int cov = srow[rx];
+        if (!cov) continue;
+        const int af = cov * a / 255;       // source alpha (0..255)
+        if (!af) continue;
+        // premultiplied RGBA8888 (byte order R,G,B,A)
+        unsigned char *px4 = out + ((size_t)dy * W + dx) * 4;
+        if (!over) {
+          // simple "over" against transparent: write the strongest coverage
+          if (af > px4[3]) {
+            px4[0] = (unsigned char)(r * af / 255);
+            px4[1] = (unsigned char)(g * af / 255);
+            px4[2] = (unsigned char)(b * af / 255);
+            px4[3] = (unsigned char)af;
+          }
+        } else {
+          // premultiplied source-over: out = src + dst*(1 - srcA)
+          const int ia = 255 - af;
+          px4[0] = (unsigned char)(r * af / 255 + px4[0] * ia / 255);
+          px4[1] = (unsigned char)(g * af / 255 + px4[1] * ia / 255);
+          px4[2] = (unsigned char)(b * af / 255 + px4[2] * ia / 255);
+          px4[3] = (unsigned char)(af + px4[3] * ia / 255);
+        }
+      }
+    }
+    pen_x += (int)(sl->advance.x >> 6);
+  }
+}
+
 unsigned char *gfx_render_text_rgba(const char *text, int font_size,
                                     int r, int g, int b, int a,
                                     int align_h, int max_w, int max_h, int wrap,
+                                    int shadow, double shadow_dx, double shadow_dy,
+                                    double shadow_opacity,
                                     int *out_w, int *out_h) {
   if (!g_ok || !text)
     return NULL;
@@ -213,46 +297,46 @@ unsigned char *gfx_render_text_rgba(const char *text, int font_size,
   if (!out)
     return NULL;
 
-  for (int li = 0; li < nlines; li++) {
-    int lw = measure_line(ls[li], le[li], rpx);
-    int pen_x = 0;
-    if (align_h == GFX_ALIGN_CENTER) pen_x = (W - lw) / 2;
-    else if (align_h == GFX_ALIGN_RIGHT) pen_x = W - lw;
-    if (pen_x < 0) pen_x = 0;
-    // baseline of the reduced-size glyphs, centred in this line's px cell
-    const int baseline = li * line_h + top_pad + asc_r;
+  // Resolve the SNES-style drop-shadow for this draw. In auto mode we honour
+  // the engine's request (offsets are in font-size space, so scale them like
+  // the glyph metrics); force mode uses the env offsets as final pixels.
+  int sh_on = 0, sh_ox = 0, sh_oy = 0, sh_a = 0;
+  if (g_shadow_mode == 2) {
+    sh_on = 1;
+    sh_ox = (int)(g_shadow_dx >= 0 ? g_shadow_dx + 0.5f : g_shadow_dx - 0.5f);
+    sh_oy = (int)(g_shadow_dy >= 0 ? g_shadow_dy + 0.5f : g_shadow_dy - 0.5f);
+    sh_a  = (int)(g_shadow_op * 255.0f + 0.5f);
+  } else if (g_shadow_mode == 1 && shadow && shadow_opacity > 0.0) {
+    sh_on = 1;
+    double sx = shadow_dx * g_font_scale, sy = shadow_dy * g_font_scale;
+    sh_ox = (int)(sx >= 0 ? sx + 0.5 : sx - 0.5);
+    sh_oy = (int)(sy >= 0 ? sy + 0.5 : sy - 0.5);
+    sh_a  = (int)(shadow_opacity * 255.0 + 0.5);
+  }
+  if (sh_on) {
+    if (sh_a < 1) sh_on = 0;                       // fully transparent → no shadow
+    else if (sh_a > 255) sh_a = 255;
+    if (sh_ox == 0 && sh_oy == 0) { sh_ox = 1; sh_oy = 1; } // ensure it's visible
+  }
 
-    const char *q = ls[li];
-    while (q < le[li] && *q) {
-      uint32_t cp = utf8_next(&q);
-      if (cp == '\n') break;
-      FT_Face f = load_glyph(cp, rpx);
-      if (!f) continue;
-      FT_GlyphSlot sl = f->glyph;
-      const int gx = pen_x + sl->bitmap_left;
-      const int gy = baseline - sl->bitmap_top;
-      for (unsigned ry = 0; ry < sl->bitmap.rows; ry++) {
-        const int dy = gy + (int)ry;
-        if (dy < 0 || dy >= H) continue;
-        const uint8_t *srow = sl->bitmap.buffer + (size_t)ry * sl->bitmap.pitch;
-        for (unsigned rx = 0; rx < sl->bitmap.width; rx++) {
-          const int dx = gx + (int)rx;
-          if (dx < 0 || dx >= W) continue;
-          const int cov = srow[rx];
-          if (!cov) continue;
-          // premultiplied RGBA8888 (byte order R,G,B,A)
-          const int af = cov * a / 255;       // final alpha
-          unsigned char *px4 = out + ((size_t)dy * W + dx) * 4;
-          // simple "over" against transparent: write the strongest coverage
-          if (af > px4[3]) {
-            px4[0] = (unsigned char)(r * af / 255);
-            px4[1] = (unsigned char)(g * af / 255);
-            px4[2] = (unsigned char)(b * af / 255);
-            px4[3] = (unsigned char)af;
-          }
-        }
-      }
-      pen_x += (int)(sl->advance.x >> 6);
+  // Pass 0: the drop-shadow (black, offset), composited source-over so it lays
+  // cleanly beneath. Pass 1: the text itself. With no shadow, only pass 1 runs
+  // and uses the original keep-strongest blend (unchanged behaviour).
+  for (int pass = (sh_on ? 0 : 1); pass < 2; pass++) {
+    for (int li = 0; li < nlines; li++) {
+      int lw = measure_line(ls[li], le[li], rpx);
+      int pen_x = 0;
+      if (align_h == GFX_ALIGN_CENTER) pen_x = (W - lw) / 2;
+      else if (align_h == GFX_ALIGN_RIGHT) pen_x = W - lw;
+      if (pen_x < 0) pen_x = 0;
+      // baseline of the reduced-size glyphs, centred in this line's px cell
+      const int baseline = li * line_h + top_pad + asc_r;
+      if (pass == 0)
+        draw_line_glyphs(out, W, H, ls[li], le[li], rpx, pen_x, baseline,
+                         0, 0, 0, sh_a, sh_ox, sh_oy, /*over=*/1);
+      else
+        draw_line_glyphs(out, W, H, ls[li], le[li], rpx, pen_x, baseline,
+                         r, g, b, a, 0, 0, /*over=*/sh_on);
     }
   }
 

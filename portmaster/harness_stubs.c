@@ -38,9 +38,12 @@ void        prefs_delete(const char *k)               { (void)k; }
 unsigned char *gfx_render_text_rgba(const char *text, int font_size,
                                     int r, int g, int b, int a,
                                     int align_h, int max_w, int max_h, int wrap,
+                                    int shadow, double shadow_dx, double shadow_dy,
+                                    double shadow_opacity,
                                     int *out_w, int *out_h) {
   (void)text;(void)font_size;(void)r;(void)g;(void)b;(void)a;(void)align_h;
   (void)max_w;(void)max_h;(void)wrap;
+  (void)shadow;(void)shadow_dx;(void)shadow_dy;(void)shadow_opacity;
   if (out_w) *out_w = 0;
   if (out_h) *out_h = 0;
   return NULL;

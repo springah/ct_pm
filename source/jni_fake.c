@@ -392,11 +392,11 @@ static int create_text_bitmap(va_list va) {
   int width = va_arg(va, int);                  // 9 constraint width (0 = auto)
   int height = va_arg(va, int);                 // 10 constraint height (0 = auto)
   // 11..23 shadow/stroke/wrap/overflow; jboolean->int, jfloat->double in varargs
-  (void)va_arg(va, int);   // 11 shadow
-  (void)va_arg(va, double); // 12 shadowDX
-  (void)va_arg(va, double); // 13 shadowDY
-  (void)va_arg(va, double); // 14 shadowBlur
-  (void)va_arg(va, double); // 15 shadowOpacity
+  int    shadow        = va_arg(va, int);    // 11 shadow enabled
+  double shadowDX      = va_arg(va, double);  // 12 shadowDX
+  double shadowDY      = va_arg(va, double);  // 13 shadowDY
+  (void)va_arg(va, double);                   // 14 shadowBlur (unsupported)
+  double shadowOpacity = va_arg(va, double);  // 15 shadowOpacity
   (void)va_arg(va, int);    // 16 stroke
   (void)va_arg(va, int);    // 17 strokeR
   (void)va_arg(va, int);    // 18 strokeG
@@ -409,6 +409,16 @@ static int create_text_bitmap(va_list va) {
   if (!g_bitmap_cb || !text || text->tag != TAG_PRIARR)
     return 0;
 
+  // Surface what the engine actually requests for the first few labels, so a
+  // device log tells us whether the drop-shadow is engine-driven (auto) or
+  // needs CT_TEXT_SHADOW=force.
+  static int dbg_shadow_n = 0;
+  if (dbg_shadow_n < 12) {
+    debugPrintf("ct: text shadow=%d dx=%.1f dy=%.1f op=%.2f size=%d\n",
+                shadow, shadowDX, shadowDY, shadowOpacity, fontSize);
+    dbg_shadow_n++;
+  }
+
   // byte[] is UTF-8 text without a NUL; copy and terminate
   char *str = malloc((size_t)text->len + 1);
   if (!str) return 0;
@@ -417,7 +427,9 @@ static int create_text_bitmap(va_list va) {
 
   int w = 0, h = 0;
   unsigned char *rgba = gfx_render_text_rgba(str, fontSize, r, g, b, a,
-                                             align & 0x0F, width, height, wrap, &w, &h);
+                                             align & 0x0F, width, height, wrap,
+                                             shadow, shadowDX, shadowDY, shadowOpacity,
+                                             &w, &h);
   free(str);
   if (!rgba) return 0;
 
