@@ -31,14 +31,19 @@ static float g_font_scale = 1.0f;
 //   0 = off    : never draw a shadow
 //   1 = auto   : honour the engine's createTextBitmapShadowStroke request
 //   2 = force  : always draw, using the offset/opacity below (final pixels)
-// Default = force, 2px down-right at 80% black: the SNES look. (1px reads too thin
-// on a 640x480 panel, ~2.5x the SNES's native width.) Override at runtime via env
+// Default = force, 1px down-right at 70%. The engine requests no shadow of its
+// own (auto = flat everywhere), so we force one. A bigger 2px/80% shadow looks
+// great on normal text, but the engine draws the *selected* menu row by
+// dark-tinting the whole sprite — which turns our offset shadow into a muddy
+// halo on the light highlight bar. We can't see that tint (the text reaches us
+// as a light fill), so we can't skip it per-row; 1px/70% keeps a clear shadow
+// while shrinking that halo to acceptable. Override at runtime via env
 // CT_TEXT_SHADOW = "off" | "auto" | "force" | "dx,dy,opacity" (a numeric triple
 // implies force; offsets are final on-screen pixels, opacity is 0..1).
 static int   g_shadow_mode = 2;     // default: force the SNES-style drop-shadow
-static float g_shadow_dx   = 2.0f;  // force-mode offset (final pixels)
-static float g_shadow_dy   = 2.0f;
-static float g_shadow_op   = 0.8f;  // force-mode opacity (0..1)
+static float g_shadow_dx   = 1.0f;  // force-mode offset (final pixels)
+static float g_shadow_dy   = 1.0f;
+static float g_shadow_op   = 0.7f;  // force-mode opacity (0..1)
 
 void gfx_init(void) {
   if (FT_Init_FreeType(&g_ft)) {
@@ -317,10 +322,6 @@ unsigned char *gfx_render_text_rgba(const char *text, int font_size,
     if (sh_a < 1) sh_on = 0;                       // fully transparent → no shadow
     else if (sh_a > 255) sh_a = 255;
     if (sh_ox == 0 && sh_oy == 0) { sh_ox = 1; sh_oy = 1; } // ensure it's visible
-    // A black drop-shadow only helps light text. CT draws the selected/highlighted
-    // menu row as black-on-light-highlight; a shadow there just muddies the glyphs.
-    // Skip it when the fill is a dark colour so that text stays crisp.
-    if (r < 96 && g < 96 && b < 96) sh_on = 0;
   }
 
   // Pass 0: the drop-shadow (black, offset), composited source-over so it lays
