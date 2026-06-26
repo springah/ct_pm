@@ -570,6 +570,17 @@ static SLresult eng_CreateAudioPlayer(void *self, SLObjectItf *pPlayer, SLDataSo
     g_players[slot] = p;
   SDL_UnlockMutex(g_reg_lock);
 
+  if (slot < 0) {
+    // All MAX_PLAYERS voices are live. An unregistered player would be silent
+    // (the mix thread only walks g_players[]) and would leak if the engine
+    // dropped the handle without calling Destroy. Fail cleanly instead, like the
+    // OOM path above: free p and report failure so the caller skips this voice.
+    // cocos checks CreateAudioPlayer's result and simply drops the sound.
+    if (p->lock) SDL_DestroyMutex(p->lock);
+    free(p);
+    return SL_RESULT_FEATURE_UNSUPPORTED;
+  }
+
   *pPlayer = &p->obj_vt;
   return SL_RESULT_SUCCESS;
 }
