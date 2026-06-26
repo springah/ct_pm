@@ -317,6 +317,10 @@ unsigned char *gfx_render_text_rgba(const char *text, int font_size,
     if (sh_a < 1) sh_on = 0;                       // fully transparent → no shadow
     else if (sh_a > 255) sh_a = 255;
     if (sh_ox == 0 && sh_oy == 0) { sh_ox = 1; sh_oy = 1; } // ensure it's visible
+    // A black drop-shadow only helps light text. CT draws the selected/highlighted
+    // menu row as black-on-light-highlight; a shadow there just muddies the glyphs.
+    // Skip it when the fill is a dark colour so that text stays crisp.
+    if (r < 96 && g < 96 && b < 96) sh_on = 0;
   }
 
   // Pass 0: the drop-shadow (black, offset), composited source-over so it lays
