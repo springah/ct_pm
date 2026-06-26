@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# package.sh -- assemble a PortMaster-installable ct.zip from portmaster/pkg/
+# package.sh -- assemble a PortMaster-installable ct_pm.zip from portmaster/pkg/
 # plus the freshly-built `ct` binary. Whitelist staging: only known files are
 # copied in, so the user's commercial game data (libchrono.so / libc++_shared.so
 # / assets/) and dev cruft (ct.bak, log.txt, saves) can NEVER leak into the zip.
@@ -17,14 +17,14 @@
 #
 # Usage:  portmaster/package.sh [path-to-ct-binary]
 #   default binary: ./ct (repo root, where portmaster/build.sh writes it)
-#   override out dir/name with OUT=/path/ct.zip
+#   override out dir/name with OUT=/path/ct_pm.zip
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "$HERE/.." && pwd)"
 PKG="$HERE/pkg"
 CT_BIN="${1:-$REPO/ct}"
-OUT="${OUT:-$REPO/ct.zip}"
+OUT="${OUT:-$REPO/ct_pm.zip}"
 
 die() { echo "!! $*" >&2; exit 1; }
 

@@ -13,7 +13,7 @@ portmaster/_so/
 
 # the built Linux binary + debug captures
 /ct
-/ct.zip
+/ct_pm.zip
 /movie_probe
 portmaster/pkg/ct/ct
 *.ppm
