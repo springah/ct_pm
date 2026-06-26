@@ -97,6 +97,12 @@ void prefs_flush(void) {
 
 static void set_raw(const char *key, const char *val) {
   Entry *e = find(key);
+  // Skip the full-file rewrite when the value is unchanged: cocos re-sets
+  // identical prefs constantly, and each set_raw() otherwise rewrites the whole
+  // file to the SD card. No behaviour change (stored value is identical) — this
+  // is purely SD-wear reduction.
+  if (e && !strcmp(e->val, val))
+    return;
   if (!e) {
     if (entry_count >= MAX_ENTRIES) {
       debugPrintf("prefs: table full, dropping %s\n", key);
@@ -107,7 +113,7 @@ static void set_raw(const char *key, const char *val) {
   }
   snprintf(e->val, sizeof(e->val), "%s", val);
   dirty = 1;
-  prefs_flush(); // cocos setters apply() immediately; keep parity
+  prefs_flush(); // cocos setters apply() immediately; keep parity (only on real change)
 }
 
 const char *prefs_get_string(const char *key, const char *def) {
