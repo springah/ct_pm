@@ -50,11 +50,6 @@ via the launcher's `LD_LIBRARY_PATH`. For a quick boot-to-title build without ff
 in `portmaster/movie_stub.c`. See `portmaster/NOTES.md` for the full architecture, the FMV
 section, milestone history, and the `os_*` abstraction map.
 
-## Build (Nintendo Switch)
-
-Unchanged from `ct_nx` — devkitA64 + libnx (`make`). The `#ifdef __SWITCH__` paths are
-byte-identical to the original; the `.nro` still builds.
-
 ## Configuration
 
 `config.txt` (created on first run): `screen_width`/`screen_height` (`-1` = panel default),
