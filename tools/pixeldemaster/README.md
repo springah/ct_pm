@@ -50,6 +50,17 @@ v2.1.5):
 - `--with-text` applies the mod's `Localize/*/msg/*.txt` files too (changes text
   layout for the SNES font — off by default; test before relying on it)
 
+## Credits
+
+This tool stands on the Chrono Trigger PC modding community's work:
+- **River Nyxx** — [CT_Explore](https://rivernyxx.com), which established the
+  `resources.bin` workflow and the `.ctp` patch format this tool reads.
+- **Shiryu** — [Pixel Demaster](https://www.nexusmods.com/chronotrigger/mods/8),
+  the pixel-art pack this is built to apply (Pixel Demaster in turn credits Caveras,
+  Jackster, and Primogenitor for its assets — see its Nexus page).
+
+This tool ships none of their work; it only lets you apply mods you download yourself.
+
 ## Notes / caveats
 - **Version-locked to CT mobile v2.1.5** (the seed/offsets are version-specific).
   Re-run against whatever `resources.bin` your target actually uses.
