@@ -144,6 +144,48 @@ static FT_Face load_glyph(uint32_t cp, int px) {
   return NULL;
 }
 
+// Glyph cache. Rasterising each glyph via FreeType per call is expensive, and the
+// engine rebuilds the text bitmap on EVERY typewriter-reveal frame (re-rendering
+// the whole growing string -> O(n^2) renders while moving), which is the cause of
+// the "text forming = slowdown" hitch. Cache rendered glyphs by (codepoint, px):
+// direct-mapped, evict-on-collision. The working set (Latin + active dialogue
+// glyphs at 1-2 sizes) fits easily, so reveals become cache hits, not re-renders.
+typedef struct {
+  uint32_t cp; int px; int valid;
+  int adv, left, top, w, rows;
+  unsigned char *buf;   // w*rows 8-bit coverage (pitch == w); NULL if empty/space
+} Glyph;
+#define GCACHE_SIZE 2048
+static Glyph g_gcache[GCACHE_SIZE];
+
+static const Glyph *get_glyph(uint32_t cp, int px) {
+  uint32_t idx = (cp * 2654435761u + (uint32_t)px * 2246822519u) & (GCACHE_SIZE - 1);
+  Glyph *e = &g_gcache[idx];
+  if (e->valid && e->cp == cp && e->px == px)
+    return e;                                   // hit
+  if (e->buf) { free(e->buf); e->buf = NULL; }  // evict any prior occupant
+  e->valid = 1; e->cp = cp; e->px = px;
+  e->adv = e->left = e->top = e->w = e->rows = 0;
+  FT_Face f = load_glyph(cp, px);               // the one FreeType render, on miss
+  if (f) {
+    FT_GlyphSlot sl = f->glyph;
+    e->adv  = (int)(sl->advance.x >> 6);
+    e->left = sl->bitmap_left;
+    e->top  = sl->bitmap_top;
+    e->w    = (int)sl->bitmap.width;
+    e->rows = (int)sl->bitmap.rows;
+    if (e->w > 0 && e->rows > 0) {
+      e->buf = (unsigned char *)malloc((size_t)e->w * e->rows);
+      if (e->buf) {
+        for (int ry = 0; ry < e->rows; ry++)
+          memcpy(e->buf + (size_t)ry * e->w,
+                 sl->bitmap.buffer + (size_t)ry * sl->bitmap.pitch, (size_t)e->w);
+      } else { e->w = e->rows = 0; }
+    }
+  }
+  return e;
+}
+
 // measure the pixel width of a single line of text at px size
 static int measure_line(const char *s, const char *end, int px) {
   int w = 0;
@@ -151,8 +193,8 @@ static int measure_line(const char *s, const char *end, int px) {
   while (p < end && *p) {
     uint32_t cp = utf8_next(&p);
     if (cp == '\n') break;
-    FT_Face f = load_glyph(cp, px);
-    if (f) w += (int)(f->glyph->advance.x >> 6);
+    const Glyph *gl = get_glyph(cp, px);
+    if (gl) w += gl->adv;
   }
   return w;
 }
@@ -171,43 +213,44 @@ static void draw_line_glyphs(unsigned char *out, int W, int H,
   while (q < end && *q) {
     uint32_t cp = utf8_next(&q);
     if (cp == '\n') break;
-    FT_Face f = load_glyph(cp, rpx);
-    if (!f) continue;
-    FT_GlyphSlot sl = f->glyph;
-    const int gx = pen_x + sl->bitmap_left + ox;
-    const int gy = baseline - sl->bitmap_top + oy;
-    for (unsigned ry = 0; ry < sl->bitmap.rows; ry++) {
-      const int dy = gy + (int)ry;
-      if (dy < 0 || dy >= H) continue;
-      const uint8_t *srow = sl->bitmap.buffer + (size_t)ry * sl->bitmap.pitch;
-      for (unsigned rx = 0; rx < sl->bitmap.width; rx++) {
-        const int dx = gx + (int)rx;
-        if (dx < 0 || dx >= W) continue;
-        const int cov = srow[rx];
-        if (!cov) continue;
-        const int af = cov * a / 255;       // source alpha (0..255)
-        if (!af) continue;
-        // premultiplied RGBA8888 (byte order R,G,B,A)
-        unsigned char *px4 = out + ((size_t)dy * W + dx) * 4;
-        if (!over) {
-          // simple "over" against transparent: write the strongest coverage
-          if (af > px4[3]) {
-            px4[0] = (unsigned char)(r * af / 255);
-            px4[1] = (unsigned char)(g * af / 255);
-            px4[2] = (unsigned char)(b * af / 255);
-            px4[3] = (unsigned char)af;
+    const Glyph *gl = get_glyph(cp, rpx);
+    if (!gl) continue;
+    if (gl->buf) {
+      const int gx = pen_x + gl->left + ox;
+      const int gy = baseline - gl->top + oy;
+      for (int ry = 0; ry < gl->rows; ry++) {
+        const int dy = gy + ry;
+        if (dy < 0 || dy >= H) continue;
+        const uint8_t *srow = gl->buf + (size_t)ry * gl->w;  // pitch == w
+        for (int rx = 0; rx < gl->w; rx++) {
+          const int dx = gx + rx;
+          if (dx < 0 || dx >= W) continue;
+          const int cov = srow[rx];
+          if (!cov) continue;
+          const int af = cov * a / 255;       // source alpha (0..255)
+          if (!af) continue;
+          // premultiplied RGBA8888 (byte order R,G,B,A)
+          unsigned char *px4 = out + ((size_t)dy * W + dx) * 4;
+          if (!over) {
+            // simple "over" against transparent: write the strongest coverage
+            if (af > px4[3]) {
+              px4[0] = (unsigned char)(r * af / 255);
+              px4[1] = (unsigned char)(g * af / 255);
+              px4[2] = (unsigned char)(b * af / 255);
+              px4[3] = (unsigned char)af;
+            }
+          } else {
+            // premultiplied source-over: out = src + dst*(1 - srcA)
+            const int ia = 255 - af;
+            px4[0] = (unsigned char)(r * af / 255 + px4[0] * ia / 255);
+            px4[1] = (unsigned char)(g * af / 255 + px4[1] * ia / 255);
+            px4[2] = (unsigned char)(b * af / 255 + px4[2] * ia / 255);
+            px4[3] = (unsigned char)(af + px4[3] * ia / 255);
           }
-        } else {
-          // premultiplied source-over: out = src + dst*(1 - srcA)
-          const int ia = 255 - af;
-          px4[0] = (unsigned char)(r * af / 255 + px4[0] * ia / 255);
-          px4[1] = (unsigned char)(g * af / 255 + px4[1] * ia / 255);
-          px4[2] = (unsigned char)(b * af / 255 + px4[2] * ia / 255);
-          px4[3] = (unsigned char)(af + px4[3] * ia / 255);
         }
       }
     }
-    pen_x += (int)(sl->advance.x >> 6);
+    pen_x += gl->adv;
   }
 }
 
