@@ -55,6 +55,15 @@ section, milestone history, and the `os_*` abstraction map.
 `config.txt` (created on first run): `screen_width`/`screen_height` (`-1` = panel default),
 `language` (`en fr de it es ja ko zh`). Launcher env: `CT_FONT_SCALE` tunes the UI font size.
 
+## Pixel-art mods (optional)
+
+The Android textures can be re-skinned with community pixel-art packs — e.g.
+[Pixel Demaster](https://www.nexusmods.com/chronotrigger/mods/8) — to swap the smoothed
+mobile art for the SNES-style look (and optionally SNES button prompts, UI colour schemes,
+and icon sets). `tools/pixeldemaster/` repacks **your own** `resources.bin` with **your own**
+downloaded mod; no assets are shipped — it only transcodes files you supply. See
+[`tools/pixeldemaster/README.md`](tools/pixeldemaster/README.md).
+
 ## Credits
 
 * **fgsfds** — [max_nx](https://github.com/fgsfdsfgs/max_nx), the loader this is based on
