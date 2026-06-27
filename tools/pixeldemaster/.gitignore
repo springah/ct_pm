@@ -1,0 +1,8 @@
+# never commit game assets or mod payloads — this tool is code only
+*.bin
+*.ctp
+*.zip
+*.png
+*.ppm
+entries.txt
+pd/
