@@ -199,3 +199,29 @@ then capture an **in-game (field/battle)** frame — PortMaster requires a **4:3
 `Image.open('latest.ppm').resize((640,480)).save('screenshot.png')` from a gameplay frame.
 Ships in the zip (assembled by `portmaster/package.sh`). ⚠️ the current screenshot is the
 old 16:9 640x360 title shot and must be re-captured before any official submission.
+
+## Backlog / next time (codebase-review findings, 2026-06-28)
+Health items surfaced in a code review — not blockers, "do when convenient":
+
+- **CI (started).** `.github/workflows/c-compile.yml` compiles the Linux target
+  to .o on an arm64 runner (movie_stub config — no proprietary .so, no ffmpeg),
+  catching header/`#ifdef __SWITCH__` `#else`-branch regressions. `lint.yml`
+  runs shellcheck (`-S error`) + `py_compile` on the pixeldemaster tools. Gaps
+  to close later: (a) the Switch branches aren't covered here — they're built in
+  ct_nx; if a Makefile returns, add a `devkitpro/devkita64` job. (b) the
+  ffmpeg-linked `movie_player.c` is only validated in the builder image (distro
+  ffmpeg version skew) — not in CI. (c) shellcheck is `-S error` to stay green;
+  tighten to `warning` once the scripts are clean.
+- **Automated tests.** Only manual smoke probes today (`movie_probe.c`, the
+  load/resolve harnesses). They need the real `.so` + assets, so they can't run
+  on a hosted runner — candidate for a self-hosted device runner (the TrimUI).
+- **Finish the OS-abstraction symmetry.** The Linux side goes through `os_*`
+  (`os.h`/`os_linux.c`); the Switch side is still inline libnx under
+  `#ifdef __SWITCH__`. Writing `os_switch.c` (already flagged "NOT YET WRITTEN"
+  at the top of this file) would let both targets share one shape.
+- **Split the monolithic units.** `jni_fake.c` (~1055), `main.c` / `imports.c`
+  (~847 each), `opensles.c` (~749). `main.c` especially mixes entry point, crash
+  handler, heap init and the lifecycle loop — those could be separate files.
+  (Shim switchboards like `jni_fake.c` are inherently large — lower priority.)
+- **Screenshot** re-capture (4:3 ≥640×480 gameplay) — see the section above and
+  `multiverse/`. Still the one hard gate on an official PortMaster submission.

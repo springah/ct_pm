@@ -1,0 +1,63 @@
+name: c-compile
+
+# Compile-check the Linux/PortMaster target. We can't link a full `ct` here
+# (that needs the user-supplied libchrono.so / libc++_shared.so and the bundled
+# ffmpeg), so this compiles every Linux-target translation unit to a .o — enough
+# to catch header breakage and #ifdef regressions on the `#else` (non-Switch)
+# branches. It mirrors the documented no-ffmpeg "boot-to-title" build, so it
+# needs only distro dev packages. The Switch `#ifdef __SWITCH__` branches are
+# built/verified in the sibling ct_nx repo; the ffmpeg-linked movie_player.c is
+# validated in the PortMaster builder image (distro ffmpeg version skews).
+
+on:
+  push:
+    paths:
+      - 'source/**'
+      - 'portmaster/**'
+      - '.github/workflows/c-compile.yml'
+  pull_request:
+    paths:
+      - 'source/**'
+      - 'portmaster/**'
+      - '.github/workflows/c-compile.yml'
+
+jobs:
+  linux-target:
+    # aarch64 runner: the code is aarch64-specific (-mcpu=cortex-a53, the
+    # crash handler reads uc_mcontext.regs[30], etc.). Free arm64 runners are
+    # available for public repos.
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config \
+            libsdl2-dev libfreetype-dev \
+            libgles-dev libegl-dev libgl-dev
+
+      - name: Compile Linux target (movie_stub config, no ffmpeg)
+        run: |
+          set -euo pipefail
+          CF="-O2 -g -mcpu=cortex-a53 -Iportmaster -Isource \
+              $(sdl2-config --cflags) $(pkg-config --cflags freetype2)"
+
+          # The boot-to-title source set: every Linux-target unit except the
+          # ffmpeg-linked movie_player.c (replaced by movie_stub.c here).
+          SRC="portmaster/os_linux.c portmaster/compat_libc.c portmaster/osk.c \
+               portmaster/movie_stub.c \
+               source/asset.c source/config.c source/error.c source/gfx.c \
+               source/imports.c source/jni_fake.c source/libc_shim.c \
+               source/main.c source/opensles.c source/prefs.c \
+               source/so_util.c source/util.c"
+
+          mkdir -p build
+          rc=0
+          for f in $SRC; do
+            echo ">> cc $f"
+            # shellcheck disable=SC2086
+            gcc $CF -c "$f" -o "build/$(basename "$f").o" || rc=1
+          done
+          exit $rc
