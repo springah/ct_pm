@@ -1,13 +1,14 @@
 name: c-compile
 
 # Compile-check the Linux/PortMaster target. We can't link a full `ct` here
-# (that needs the user-supplied libchrono.so / libc++_shared.so and the bundled
-# ffmpeg), so this compiles every Linux-target translation unit to a .o — enough
-# to catch header breakage and #ifdef regressions on the `#else` (non-Switch)
-# branches. It mirrors the documented no-ffmpeg "boot-to-title" build, so it
-# needs only distro dev packages. The Switch `#ifdef __SWITCH__` branches are
-# built/verified in the sibling ct_nx repo; the ffmpeg-linked movie_player.c is
-# validated in the PortMaster builder image (distro ffmpeg version skews).
+# (that needs the user-supplied libchrono.so / libc++_shared.so), so this
+# compiles every Linux-target translation unit to a .o — enough to catch header
+# breakage and #ifdef regressions on the `#else` (non-Switch) branches. It needs
+# only distro dev packages. The Switch `#ifdef __SWITCH__` branches are
+# built/verified in the sibling ct_nx repo. The real FMV unit (movie_player.c)
+# uses the FFmpeg 5.1+ channel-layout API, so it compiles against Ubuntu 24.04's
+# ffmpeg 6.x here (not 22.04's 4.4); the linked binary is still validated in the
+# PortMaster builder image with its pinned ffmpeg 7.1.
 
 on:
   push:
@@ -36,22 +37,26 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             build-essential pkg-config \
             libsdl2-dev libfreetype-dev \
-            libgles-dev libegl-dev libgl-dev
+            libgles-dev libegl-dev libgl-dev \
+            libavformat-dev libavcodec-dev libswscale-dev \
+            libswresample-dev libavutil-dev
 
-      - name: Compile Linux target (movie_stub config, no ffmpeg)
+      - name: Compile Linux target
         run: |
           set -euo pipefail
           CF="-O2 -g -mcpu=cortex-a53 -Iportmaster -Isource \
               $(sdl2-config --cflags) $(pkg-config --cflags freetype2)"
 
-          # The boot-to-title source set: every Linux-target unit except the
-          # ffmpeg-linked movie_player.c (replaced by movie_stub.c here).
+          # Every Linux-target unit. movie_player.c (real FMV) and movie_stub.c
+          # (boot-to-title placeholder) both define movie_play, but each compiles
+          # to its own .o and they are never linked together here, so both are
+          # syntax-checked.
           SRC="portmaster/os_linux.c portmaster/compat_libc.c portmaster/osk.c \
-               portmaster/movie_stub.c \
+               portmaster/crash.c portmaster/movie_stub.c \
                source/asset.c source/config.c source/error.c source/gfx.c \
                source/imports.c source/jni_fake.c source/libc_shim.c \
-               source/main.c source/opensles.c source/prefs.c \
-               source/so_util.c source/util.c"
+               source/main.c source/movie_player.c source/opensles.c \
+               source/prefs.c source/so_util.c source/util.c"
 
           mkdir -p build
           rc=0

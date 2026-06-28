@@ -18,9 +18,7 @@
 #else
 #include "switch_compat.h"
 #include "os.h"
-#include <signal.h>
-#include <execinfo.h>
-#include <ucontext.h>
+#include "crash.h"
 #endif
 #include <SDL2/SDL.h>
 
@@ -44,70 +42,9 @@ so_module game_mod;  // libchrono.so
 
 void ct_resolve_imports(so_module *mod);
 
-#ifndef __SWITCH__
-// Crash handler: on a fault, print the faulting PC + accessed addr and resolve
-// them to libchrono.so / libc++_shared.so + offset (so `nm` on the .so maps it to
-// a function). Output is unbuffered so nothing is lost on the crash.
-static void ct_report_addr(const char *what, uintptr_t a) {
-  if (game_mod.load_virtbase && a >= (uintptr_t)game_mod.load_virtbase &&
-      a < (uintptr_t)game_mod.load_virtbase + game_mod.load_size)
-    fprintf(stderr, "  %s = libchrono.so + 0x%lx\n", what,
-            (unsigned long)(a - (uintptr_t)game_mod.load_virtbase));
-  else if (cpp_mod.load_virtbase && a >= (uintptr_t)cpp_mod.load_virtbase &&
-           a < (uintptr_t)cpp_mod.load_virtbase + cpp_mod.load_size)
-    fprintf(stderr, "  %s = libc++_shared.so + 0x%lx\n", what,
-            (unsigned long)(a - (uintptr_t)cpp_mod.load_virtbase));
-  else
-    fprintf(stderr, "  %s = %p (outside guest modules)\n", what, (void *)a);
-}
-
-static void ct_crash_handler(int sig, siginfo_t *info, void *uctx) {
-  fprintf(stderr, "\n*** ct CRASH: signal %d, fault addr %p ***\n",
-          sig, info ? info->si_addr : NULL);
-#if defined(__aarch64__)
-  if (uctx) {
-    uintptr_t pc = (uintptr_t)((ucontext_t *)uctx)->uc_mcontext.pc;
-    uintptr_t lr = (uintptr_t)((ucontext_t *)uctx)->uc_mcontext.regs[30];
-    ct_report_addr("PC", pc);
-    ct_report_addr("LR", lr);
-  }
-#endif
-  if (info) ct_report_addr("accessed", (uintptr_t)info->si_addr);
-  void *bt[24];
-  int n = backtrace(bt, 24);
-  fprintf(stderr, "  --- host backtrace (%d) ---\n", n);
-  backtrace_symbols_fd(bt, n, 2);
-  fflush(stderr);
-  _exit(139);
-}
-
-// External-kill (framework / system quit hotkey) -> request a clean exit that the
-// main loop honours within a frame, so returning to the frontend is reliable+fast.
-static volatile sig_atomic_t g_term_requested = 0;
-static void ct_term_handler(int sig) { (void)sig; g_term_requested = 1; }
-
-static void ct_install_crash_handler(void) {
-  setvbuf(stdout, NULL, _IONBF, 0);
-  setvbuf(stderr, NULL, _IONBF, 0);
-  struct sigaction sa;
-  memset(&sa, 0, sizeof(sa));
-  sa.sa_sigaction = ct_crash_handler;
-  sa.sa_flags = SA_SIGINFO;
-  sigemptyset(&sa.sa_mask);
-  sigaction(SIGSEGV, &sa, NULL);
-  sigaction(SIGABRT, &sa, NULL);
-  sigaction(SIGBUS, &sa, NULL);
-  sigaction(SIGILL, &sa, NULL);
-  sigaction(SIGFPE, &sa, NULL);
-
-  struct sigaction st;
-  memset(&st, 0, sizeof(st));
-  st.sa_handler = ct_term_handler;
-  sigemptyset(&st.sa_mask);
-  sigaction(SIGTERM, &st, NULL);
-  sigaction(SIGINT, &st, NULL);
-}
-#endif
+// The Linux/PortMaster crash + termination signal handlers live in
+// portmaster/crash.c (ct_install_crash_handler / ct_term_requested, declared in
+// crash.h). They resolve fault addresses against cpp_mod / game_mod below.
 
 #ifdef __SWITCH__
 // provide a replacement heap init so the newlib heap is separate from the .so
@@ -750,7 +687,7 @@ int main(void) {
 #ifdef __SWITCH__
   while (appletMainLoop() && !jni_quit_requested) {
 #else
-  while (!jni_quit_requested && !g_in.quit && !g_term_requested) {
+  while (!jni_quit_requested && !g_in.quit && !ct_term_requested()) {
 #endif
     // pause/resume on focus changes
 #ifdef __SWITCH__

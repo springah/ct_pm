@@ -22,12 +22,13 @@ jobs:
       - name: Lint shell scripts
         run: |
           set -euo pipefail
-          # -S error: fail only on hard errors so the build stays green; tighten
-          # to `warning` later. SC1091 = "can't follow sourced file": the
-          # PortMaster launcher sources framework files (funcs.txt, control.txt)
-          # that live on-device, not in the repo.
+          # -S warning: fail on warnings too (the scripts are clean at this bar).
+          # SC1091 = "can't follow sourced file": the PortMaster launcher sources
+          # framework files (funcs.txt, control.txt) that live on-device, not in
+          # the repo. The launcher carries an inline directive for the framework-
+          # sourced vars it can't see (SC1090/SC2154).
           find . -path ./.git -prune -o -name '*.sh' -print0 \
-            | xargs -0 shellcheck -S error -e SC1091
+            | xargs -0 shellcheck -S warning -e SC1091
 
   python:
     runs-on: ubuntu-latest

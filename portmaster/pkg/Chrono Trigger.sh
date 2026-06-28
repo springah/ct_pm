@@ -3,6 +3,11 @@
 # Chrono Trigger (Android) via the ct_nx loader. User supplies libchrono.so +
 # libc++_shared.so + assets/ from their own legally-owned APK (v2.1.5).
 
+# The PortMaster framework files (control.txt / mod_<cfw>.txt) are sourced at
+# runtime from the device, not the repo, and define get_controls, $directory,
+# $sdl_controllerconfig, $ESUDO, $DEVICE_ARCH, etc. shellcheck can't see them:
+# shellcheck disable=SC1090,SC2154
+
 XDG_DATA_HOME=${XDG_DATA_HOME:-$HOME/.local/share}
 
 if [ -d "/opt/system/Tools/PortMaster/" ]; then
@@ -21,7 +26,7 @@ source $controlfolder/control.txt
 get_controls
 
 GAMEDIR="/$directory/ports/ct"
-cd "$GAMEDIR"
+cd "$GAMEDIR" || exit 1
 
 # --- first-run: require the user-supplied game files ---------------------------
 missing=""
