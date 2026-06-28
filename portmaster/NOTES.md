@@ -203,15 +203,15 @@ old 16:9 640x360 title shot and must be re-captured before any official submissi
 ## Backlog / next time (codebase-review findings, 2026-06-28)
 Health items surfaced in a code review — not blockers, "do when convenient":
 
-- **CI (started).** `.github/workflows/c-compile.yml` compiles the Linux target
-  to .o on an arm64 runner (movie_stub config — no proprietary .so, no ffmpeg),
-  catching header/`#ifdef __SWITCH__` `#else`-branch regressions. `lint.yml`
-  runs shellcheck (`-S error`) + `py_compile` on the pixeldemaster tools. Gaps
-  to close later: (a) the Switch branches aren't covered here — they're built in
-  ct_nx; if a Makefile returns, add a `devkitpro/devkita64` job. (b) the
-  ffmpeg-linked `movie_player.c` is only validated in the builder image (distro
-  ffmpeg version skew) — not in CI. (c) shellcheck is `-S error` to stay green;
-  tighten to `warning` once the scripts are clean.
+- **CI.** `.github/workflows/c-compile.yml` compiles the whole Linux target to
+  .o on an arm64 runner — now including the real `movie_player.c` against Ubuntu
+  24.04's ffmpeg 6.x (it uses the FFmpeg 5.1+ channel-layout API, so 22.04's 4.4
+  would fail) — catching header/`#ifdef __SWITCH__` `#else`-branch regressions.
+  `lint.yml` runs shellcheck (`-S warning`; the launcher carries an inline
+  directive for its framework-sourced vars) + `py_compile` on the pixeldemaster
+  tools. Remaining gap: the Switch branches aren't covered here — they're built
+  in ct_nx; if a Makefile returns, add a `devkitpro/devkita64` job. The
+  ffmpeg-*linked* binary is still validated in the builder image (pinned 7.1).
 - **Automated tests.** Only manual smoke probes today (`movie_probe.c`, the
   load/resolve harnesses). They need the real `.so` + assets, so they can't run
   on a hosted runner — candidate for a self-hosted device runner (the TrimUI).
@@ -219,9 +219,12 @@ Health items surfaced in a code review — not blockers, "do when convenient":
   (`os.h`/`os_linux.c`); the Switch side is still inline libnx under
   `#ifdef __SWITCH__`. Writing `os_switch.c` (already flagged "NOT YET WRITTEN"
   at the top of this file) would let both targets share one shape.
-- **Split the monolithic units.** `jni_fake.c` (~1055), `main.c` / `imports.c`
-  (~847 each), `opensles.c` (~749). `main.c` especially mixes entry point, crash
-  handler, heap init and the lifecycle loop — those could be separate files.
-  (Shim switchboards like `jni_fake.c` are inherently large — lower priority.)
+- **Split the monolithic units (in progress).** The Linux crash + termination
+  signal handlers are now out of `main.c` in `portmaster/crash.c`
+  (`ct_install_crash_handler` / `ct_term_requested`, declared in `crash.h`).
+  Still chunky: `jni_fake.c` (~1055), `imports.c` / `main.c` (~847 each),
+  `opensles.c` (~749). Next easy carve from `main.c`: the JNI entry-point
+  resolve/bind table. (Shim switchboards like `jni_fake.c` are inherently large
+  — lower priority.)
 - **Screenshot** re-capture (4:3 ≥640×480 gameplay) — see the section above and
   `multiverse/`. Still the one hard gate on an official PortMaster submission.
