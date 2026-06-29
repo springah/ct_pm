@@ -145,7 +145,14 @@ static int pthread_cond_wait_fake(pthread_cond_t **cnd, pthread_mutex_t **mtx) {
 static int pthread_cond_timedwait_fake(pthread_cond_t **cnd, pthread_mutex_t **mtx, const struct timespec *t) {
   if (ensure_cond(cnd) < 0) return -1;
   if (ensure_mutex(mtx) < 0) return -1;
-  return pthread_cond_timedwait(*cnd, *mtx, t);
+  int r = pthread_cond_timedwait(*cnd, *mtx, t);
+  // The guest (libchrono.so) is bionic: its NDK libc++ condition_variable::wait_for throws an
+  // *uncaught* std::system_error -- std::terminate'ing the process -- unless the timed wait returns
+  // 0 or *bionic* ETIMEDOUT (110). On the Switch the host is newlib, whose ETIMEDOUT is 116, so a
+  // genuine timeout would close the game. Map the host timeout code to the value the guest expects.
+  // On glibc (PortMaster) ETIMEDOUT is already 110, so this is a no-op there.
+  if (r == ETIMEDOUT) return 110; // 110 = bionic/Linux ETIMEDOUT
+  return r;
 }
 
 // bionic pthread_once_t is a zero-initialised int. A correct pthread_once must
