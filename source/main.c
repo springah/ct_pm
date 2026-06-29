@@ -484,10 +484,17 @@ static void update_keys(void) {
   // flood the engine's controller listeners or fight d-pad navigation.
   if (e_ctrlAxis) {
     const float dz = 0.12f;
-    const float axes[4] = { g_in.lx, g_in.ly, g_in.rx, g_in.ry };
-    static const int axis_key[4] = { CC_JOY_LX, CC_JOY_LY, CC_JOY_RX, CC_JOY_RY };
-    static float prev_axis[4] = { 0, 0, 0, 0 };
-    for (int i = 0; i < 4; i++) {
+    // The right stick has no engine binding (CC_JOY_RX/RY are ignored), so mirror it onto the
+    // movement axes: the left stick drives, and when an axis is centred the right stick takes
+    // over -- so either stick moves the character. (RX/RY are no longer emitted; re-using LX/LY
+    // avoids two sources fighting on the same axis.)
+    const float axes[2] = {
+      (g_in.lx > -dz && g_in.lx < dz) ? g_in.rx : g_in.lx,
+      (g_in.ly > -dz && g_in.ly < dz) ? g_in.ry : g_in.ly,
+    };
+    static const int axis_key[2] = { CC_JOY_LX, CC_JOY_LY };
+    static float prev_axis[2] = { 0, 0 };
+    for (int i = 0; i < 2; i++) {
       float v = (axes[i] > -dz && axes[i] < dz) ? 0.0f : axes[i];
       if (v != prev_axis[i]) {
         e_ctrlAxis(fake_env, thiz, g_ctrl_name, 0, axis_key[i], v, 1);
