@@ -46,6 +46,7 @@ You need three things out of your own Chrono Trigger **v2.1.5** Android APK:
 - The **ct_nx** loader project, on which this port is built.
 - The **PortMaster** community and toolchain.
 - **FFmpeg** (LGPL) — bundled, decode-only, for cutscene playback.
+- **Caveras** — the *ChronoType* SNES font recreation (CC BY-NC-SA), used for in-game text.
 
 ## Compile
 

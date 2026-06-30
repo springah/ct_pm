@@ -16,7 +16,8 @@ port). The codebase is **dual-target**: the OS layer is behind `#ifdef __SWITCH_
 same `source/` builds for both Switch (libnx) and Linux (SDL2/POSIX, in `portmaster/`).
 
 > Status: **playable** — boots, renders on the GPU, plays and saves. Verified on a
-> **TrimUI Smart Pro** (Allwinner A133 / Mali-G31 / Knulli). See `portmaster/NOTES.md`.
+> **TrimUI Smart Pro** (Allwinner A133 / Mali-G31), **Anbernic RG40XX-V** and
+> **RG35XX-SP** (Allwinner H700), all on Knulli. See `portmaster/NOTES.md`.
 
 ## You supply the game
 
@@ -71,7 +72,7 @@ See [`tools/pixeldemaster/README.md`](tools/pixeldemaster/README.md).
 * **TheOfficialFloW** — the original Vita ports that pioneered the technique
 * **NaGaa95** — `ct_nx`, the Switch port this derives from
 * **JohnnyonFlame** — gmloader-next, reference for the Linux ELF-loader + glibc TLS handling
-* **Caveras** — the *ChronoType* SNES font recreation (CC BY-NC-SA; see `portmaster/pkg/ct/font-license.txt`)
+* **Caveras** — the *ChronoType* SNES font recreation (CC BY-NC-SA; see `portmaster/pkg/ct/licenses/font-license.txt`)
 * **FFmpeg** — the [FFmpeg project](https://ffmpeg.org) (LGPL v2.1); a minimal decode-only
   build is bundled for cutscene playback (`portmaster/ffmpeg-build.sh`, license in
   `portmaster/pkg/ct/licenses/`)
