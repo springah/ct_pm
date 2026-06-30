@@ -33,6 +33,7 @@
 #include "opensles.h"
 #include "prefs.h"
 #include "movie_player.h"
+#include "movelog.h"
 
 static void *heap_so_base = NULL;
 static size_t heap_so_limit = 0;
@@ -588,6 +589,11 @@ int main(void) {
     uintptr_t glrp = so_find_addr(&game_mod, "_ZN10DeviceInfo23getLocalizeResourcePathEv");
     *(uint32_t *)(glrp + 0x20) = 0xd2800009u | ((uint32_t)idx << 5);
   }
+
+  // CT_MOVELOG: hook NanameHantei() to log per-frame dx/dy + sub-pixel accumulators.
+  // Must be installed while game_mod's .text is still RW (before so_finalize).
+  // Has no effect unless CT_MOVELOG=1 is set in the environment.
+  movelog_install(&game_mod);
 
   so_finalize(&cpp_mod);
   so_finalize(&game_mod);
