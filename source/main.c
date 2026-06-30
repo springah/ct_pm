@@ -8,6 +8,7 @@
  * (JNI_OnLoad -> setContext/apk/assets -> nativeInit -> nativeRender loop).
  */
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -42,6 +43,37 @@ so_module cpp_mod;   // libc++_shared.so
 so_module game_mod;  // libchrono.so
 
 void ct_resolve_imports(so_module *mod);
+
+// --- libchrono version gate ------------------------------------------------
+// Two of our patches write to raw, build-specific offsets that are only valid
+// for the Chrono Trigger Android v2.1.5 libchrono.so: the FMV->title scene-id
+// redirect (+0xbc7210) and the CT_MOVELOG hook (+0x59acfc). On any other build
+// those addresses are meaningless, so the writes would corrupt memory or crash.
+// Before doing them we fingerprint the loaded module: the first six instructions
+// of SceneManager::NextScene (+0x644874) pin the exact code layout the scene-id
+// offset depends on. If the fingerprint mismatches (or an offset falls outside
+// the mapped image) we skip the version-specific pokes and warn -- the rest of
+// the engine is symbol-resolved and version-tolerant, so the game still runs.
+#define CT_OFF_NEXTSCENE 0x644874u
+#define CT_OFF_SCENEID   0xbc7210u
+#define CT_OFF_NANAME    0x59acfcu
+static const unsigned char ct_sig_nextscene[24] = {
+  0xff, 0x03, 0x01, 0xd1, 0xfd, 0x7b, 0x02, 0xa9, // sub sp; stp x29,x30
+  0xf4, 0x4f, 0x03, 0xa9, 0xfd, 0x83, 0x00, 0x91, // stp x20,x19; add x29
+  0x54, 0xd0, 0x3b, 0xd5, 0xf3, 0x03, 0x00, 0x2a, // mrs tpidr_el0; mov w19,w0
+};
+static int g_libchrono_v215 = 0;
+
+static int ct_verify_libchrono(const so_module *mod) {
+  const uintptr_t sz = (uintptr_t)mod->load_size;
+  // Every offset we poke (or read for the fingerprint) must lie inside the image.
+  if (CT_OFF_SCENEID + sizeof(void *) > sz ||
+      CT_OFF_NEXTSCENE + sizeof(ct_sig_nextscene) > sz ||
+      CT_OFF_NANAME + 16 > sz)
+    return 0;
+  const unsigned char *p = (const unsigned char *)mod->load_virtbase + CT_OFF_NEXTSCENE;
+  return memcmp(p, ct_sig_nextscene, sizeof(ct_sig_nextscene)) == 0;
+}
 
 // The Linux/PortMaster crash + termination signal handlers live in
 // portmaster/crash.c (ct_install_crash_handler / ct_term_requested, declared in
@@ -574,6 +606,16 @@ int main(void) {
   if (!e_nativeInit || !e_nativeRender || !e_JNI_OnLoad)
     fatal_error("Could not resolve cocos2d-x engine entry points.");
 
+  // Confirm this is the supported v2.1.5 libchrono before we touch any raw,
+  // build-specific offset (the scene-id redirect + the CT_MOVELOG hook below).
+  g_libchrono_v215 = ct_verify_libchrono(&game_mod);
+  if (!g_libchrono_v215)
+    fprintf(stderr,
+            "ct: WARNING -- libchrono.so is not the supported Chrono Trigger Android "
+            "v2.1.5 build (offset fingerprint mismatch). Version-specific fixes "
+            "(FMV->title transition, CT_MOVELOG) are DISABLED. The game requires the "
+            "v2.1.5 libchrono.so.\n");
+
   // Force the UI/text language to config.language regardless of what the engine
   // detects. resources.bin contains all languages under Localize/<code>/; the
   // engine selects via DeviceInfo::mCurrentLanguage, read DIRECTLY by both
@@ -592,8 +634,10 @@ int main(void) {
 
   // CT_MOVELOG: hook NanameHantei() to log per-frame dx/dy + sub-pixel accumulators.
   // Must be installed while game_mod's .text is still RW (before so_finalize).
-  // Has no effect unless CT_MOVELOG=1 is set in the environment.
-  movelog_install(&game_mod);
+  // Has no effect unless CT_MOVELOG=1 is set in the environment. Gated on the
+  // version check -- the hook writes a raw v2.1.5 offset.
+  if (g_libchrono_v215)
+    movelog_install(&game_mod);
 
   so_finalize(&cpp_mod);
   so_finalize(&game_mod);
@@ -758,10 +802,12 @@ int main(void) {
       // DemoMovieScene (28) so NextScene takes the demo branch (-> replaceScene(
       // create(3)) = TitleScene). Leave in-game cutscenes (PlayMovieScene, id 29)
       // alone — they already have the correct destination. (Offset is libchrono v2.1.5.)
-      void **sid_pp = (void **)((uintptr_t)game_mod.load_virtbase + 0xbc7210);
-      if (*sid_pp) {
-        int *sid = (int *)*sid_pp;
-        if (*sid != 29) *sid = 28; // 29 = PlayMovieScene cutscene; don't redirect it
+      if (g_libchrono_v215) {
+        void **sid_pp = (void **)((uintptr_t)game_mod.load_virtbase + CT_OFF_SCENEID);
+        if (*sid_pp) {
+          int *sid = (int *)*sid_pp;
+          if (*sid != 29) *sid = 28; // 29 = PlayMovieScene cutscene; don't redirect it
+        }
       }
       if (e_keyEvent) {
         e_keyEvent(fake_env, thiz, AK_BACK, 1); // KeyCode 6 == Back/Escape
