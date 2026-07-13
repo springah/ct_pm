@@ -35,6 +35,7 @@
 #include "prefs.h"
 #include "movie_player.h"
 #include "movelog.h"
+#include "rescale.h"
 
 static void *heap_so_base = NULL;
 static size_t heap_so_limit = 0;
@@ -579,6 +580,11 @@ int main(void) {
   if (!egl_init())
     fatal_error("Failed to create an OpenGL ES 2.0 context.");
 
+  // Linux/PortMaster: these handhelds are GPU-bound at panel resolution, so the
+  // engine renders into a reduced-size FBO and is upscaled at present. Must be
+  // decided before nativeInit (the engine is told the internal size).
+  ct_rescale_setup(screen_width, screen_height);
+
   // --- load both modules: libc++_shared first so libchrono's std imports bind ---
 #ifdef __SWITCH__
   if (so_load(&cpp_mod, SOCPP_NAME, heap_so_base, heap_so_limit) < 0)
@@ -680,6 +686,7 @@ int main(void) {
   movie_set_input_drain(input_consume_held); // FMV skip must not bleed into the engine
   osk_set_gl_invalidate(e_glInvalidate); // on-screen keyboard restores cocos GL state too
   osk_set_input_drain(input_consume_held); // ...nor the OSK confirm/cancel button
+  ct_rescale_set_gl_invalidate(e_glInvalidate); // the per-frame upscale blit as well
 #endif
 
   // a persistent device-name jstring for the controller event callbacks
@@ -706,7 +713,13 @@ int main(void) {
   }
 
   // create the GLView + run applicationDidFinishLaunching (the engine's entry)
-  e_nativeInit(fake_env, thiz, screen_width, screen_height);
+  // -- told the internal render size when the rescale interpose is active, so
+  // all its viewports/scissors/render targets are natively sized to the FBO.
+  {
+    int fb_w = screen_width, fb_h = screen_height;
+    ct_rescale_engine_size(&fb_w, &fb_h);
+    e_nativeInit(fake_env, thiz, fb_w, fb_h);
+  }
 
   // input
 #ifdef __SWITCH__
@@ -725,7 +738,10 @@ int main(void) {
   // CT_OSK_TEST: pop the on-screen keyboard at boot so it can be exercised without
   // navigating to an in-game name field. Type + OK, then check the log for the result.
   if (getenv("CT_OSK_TEST")) {
-    e_nativeRender(fake_env); os_gfx_swap(); // establish the viewport + a backdrop
+    ct_rescale_begin_frame();
+    e_nativeRender(fake_env); // establish the viewport + a backdrop
+    ct_rescale_present();
+    os_gfx_swap();
     SwkbdConfig kb; swkbdCreate(&kb, 0);
     swkbdConfigSetInitialText(&kb, "CRONO");
     swkbdConfigSetStringLenMax(&kb, 8);
@@ -770,10 +786,12 @@ int main(void) {
     force_language(); // keep mCurrentLanguage pinned for any direct readers
                       // (getCurrentLanguage/getLocalizeResourcePath are patched)
 
+    ct_rescale_begin_frame(); // no-op unless the reduced-resolution FBO is active
     e_nativeRender(fake_env);
 #ifdef __SWITCH__
     eglSwapBuffers(s_display, s_surface);
 #else
+    ct_rescale_present(); // upscale the engine's FBO frame to the backbuffer
     // debug: dump frames off the GPU back buffer when CT_CAPTURE is set --
     // early, then periodically, so we can watch it progress splash -> title.
     if (cap_enabled) {

@@ -15,6 +15,7 @@
 #include "switch_compat.h"
 #include "os.h"
 #include "gfx.h"
+#include "rescale.h"
 
 #include <GLES2/gl2.h>
 #include <stdio.h>
@@ -233,6 +234,10 @@ Result swkbdShow(SwkbdConfig *c, char *out, size_t len) {
   char buf[1024] = { 0 };
   if (c && c->initial[0]) snprintf(buf, sizeof(buf), "%.*s", maxlen, c->initial);
 
+  // The keyboard draws at full panel resolution: leave the engine's
+  // reduced-size FBO for the real backbuffer before sizing off GL_VIEWPORT.
+  ct_rescale_suspend();
+
   GLint vp[4] = { 0, 0, 0, 0 };
   glGetIntegerv(GL_VIEWPORT, vp);
   g_vw = vp[2] > 0 ? vp[2] : 1280;
@@ -337,6 +342,7 @@ Result swkbdShow(SwkbdConfig *c, char *out, size_t len) {
   if (sv_cull)  glEnable(GL_CULL_FACE);  else glDisable(GL_CULL_FACE);
   if (sv_blend) glEnable(GL_BLEND);      else glDisable(GL_BLEND);
   glUseProgram(0);
+  ct_rescale_resume(); // back onto the engine's FBO + internal viewport
   if (g_gl_invalidate) g_gl_invalidate(); // we changed GL state behind cocos's back
   if (g_input_drain) g_input_drain(); // drop the button still held to confirm/cancel
   return result == 0 ? 0 : 1;

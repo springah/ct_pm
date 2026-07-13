@@ -37,6 +37,7 @@
 #include "movie_player.h"
 #include "opensles.h"
 #include "asset.h"
+#include "rescale.h"
 #include "util.h"
 
 static void (*g_gl_invalidate)(void); // cocos2d::GL::invalidateStateCache
@@ -248,6 +249,9 @@ int movie_play(const char *name) {
     return 0; // not found: just continue
   }
   cpu_boost(1); // H.264 software decode is heavy; boost for smooth playback
+  // Cutscenes draw at full panel resolution: leave the engine's reduced-size
+  // FBO for the real backbuffer (also sizes gl_init's GL_VIEWPORT read right).
+  ct_rescale_suspend();
 
   int stop = 0;
   AVFormatContext *fmt = NULL;
@@ -384,6 +388,7 @@ done:
   // Restore the depth/blend enables to whatever the engine had on entry.
   if (sv_depth) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
   if (sv_blend) glEnable(GL_BLEND);      else glDisable(GL_BLEND);
+  ct_rescale_resume(); // back onto the engine's FBO + internal viewport
   if (g_gl_invalidate) g_gl_invalidate(); // we changed GL state behind cocos's back
   if (g_input_drain) g_input_drain(); // drop the button still held to skip the clip
   opensles_movie_end();

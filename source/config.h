@@ -36,6 +36,9 @@ typedef struct {
   int screen_width;
   int screen_height;
   char language[8];
+  // Internal render scale (Linux/PortMaster; see rescale.c). The engine
+  // renders at panel*scale and is upscaled at present; 1 = native/off.
+  float render_scale;
 } Config;
 
 extern Config config;

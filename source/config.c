@@ -16,7 +16,8 @@
 #define CONFIG_VARS \
   CONFIG_VAR_INT(screen_width); \
   CONFIG_VAR_INT(screen_height); \
-  CONFIG_VAR_STR(language);
+  CONFIG_VAR_STR(language); \
+  CONFIG_VAR_FLOAT(render_scale);
 
 Config config;
 static int config_needs_rewrite = 0;
@@ -43,6 +44,7 @@ int read_config(const char *file) {
   config.screen_width = -1; // auto
   config.screen_height = -1;
   strlcpy(config.language, LANG_DEFAULT, sizeof(config.language));
+  config.render_scale = 0.75f; // GPU-bound handhelds: render 3/4-size, upscale
 
   FILE *f = fopen(file, "r");
   if (f == NULL)

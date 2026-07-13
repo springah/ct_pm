@@ -46,6 +46,7 @@
 #include "libc_shim.h"
 #include "opensles.h"
 #include "asset.h"
+#include "rescale.h"
 #include "imports.h"
 
 // ---------------------------------------------------------------------------
@@ -230,12 +231,26 @@ static int clock_gettime_fake(int clk, struct timespec *tp) {
   return 0;
 }
 
+// Render-scale interpose (rescale.c): the engine renders at a reduced internal
+// resolution into an offscreen FBO, so its binds of the default framebuffer are
+// redirected there. Every resolution path the engine has for glBindFramebuffer
+// -- the fixed import below, dlsym, eglGetProcAddress -- must hand back this
+// wrapper, or a probed pointer would bypass the redirect.
+static void glBindFramebuffer_scaled(GLenum target, GLuint fb) {
+  glBindFramebuffer(target, ct_rescale_redirect_fb(fb));
+}
+static void *eglGetProcAddress_scaled(const char *name) {
+  if (name && !strcmp(name, "glBindFramebuffer"))
+    return (void *)&glBindFramebuffer_scaled;
+  return (void *)eglGetProcAddress(name);
+}
+
 // dlsym: cocos probes GL/EGL extensions through it. Resolve via eglGetProcAddress
 // first, then fall back to our own import table.
 DynLibFunction *so_find_import(DynLibFunction *funcs, int num_funcs, const char *name);
 static void *dlsym_fake(void *handle, const char *name) {
   (void)handle;
-  void *p = (void *)eglGetProcAddress(name);
+  void *p = eglGetProcAddress_scaled(name);
   if (p) return p;
   DynLibFunction *f = so_find_import(dynlib_functions, (int)dynlib_numfunctions, name);
   return f ? (void *)f->func : NULL;
@@ -710,15 +725,16 @@ DynLibFunction dynlib_functions[] = {
   { "inet_pton", (uintptr_t)&inet_pton_fake },
   { "ioctl", (uintptr_t)&ioctl_fake },
 
-  // EGL (only eglGetProcAddress is used by libchrono; resolve to real EGL)
-  { "eglGetProcAddress", (uintptr_t)&eglGetProcAddress },
+  // EGL (only eglGetProcAddress is used by libchrono; wrapped so a probed
+  // glBindFramebuffer still routes through the render-scale redirect)
+  { "eglGetProcAddress", (uintptr_t)&eglGetProcAddress_scaled },
 
   // GLES2 fixed entry points (mesa libGLESv2)
   { "glActiveTexture", (uintptr_t)&glActiveTexture },
   { "glAttachShader", (uintptr_t)&glAttachShader },
   { "glBindAttribLocation", (uintptr_t)&glBindAttribLocation },
   { "glBindBuffer", (uintptr_t)&glBindBuffer },
-  { "glBindFramebuffer", (uintptr_t)&glBindFramebuffer },
+  { "glBindFramebuffer", (uintptr_t)&glBindFramebuffer_scaled },
   { "glBindRenderbuffer", (uintptr_t)&glBindRenderbuffer },
   { "glBindTexture", (uintptr_t)&glBindTexture },
   { "glBlendColor", (uintptr_t)&glBlendColor },
