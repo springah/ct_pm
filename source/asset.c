@@ -100,14 +100,16 @@ struct CtAsset {
   char path[1024];  // resolved path, for the reopen pool
 };
 
-// Reopen pool: the engine reopens resources.bin for nearly every sub-file
-// access (CT_IOLOG counted ~150 reopens just booting to the title), paying
-// fopen + a fresh stream buffer + a size probe each time. Closed archive
+// Reopen pool: the engine reopens the same handful of assets for nearly every
+// access, paying fopen + a fresh stream buffer + a size probe each time. A
+// CT_IOLOG play-session capture (2026-07-13) counted resources.bin 1292x plus
+// the two paletted-texture shader sources 263x EACH (they are re-read per
+// scene/texture load), so small files churn as hard as the big archive. Closed
 // streams are parked here keyed by path and revived on the next open, so the
-// churn collapses to an fseek. Archives only (>= 1 MB); the AAsset API is
-// read-only, so a revived stream can never observe stale data.
-#define ASSET_POOL_SLOTS 4
-#define ASSET_POOL_MIN_SIZE (1024 * 1024)
+// churn collapses to an fseek. The AAsset API is read-only, so a revived
+// stream can never observe stale data.
+#define ASSET_POOL_SLOTS 6
+#define ASSET_POOL_MIN_SIZE 0
 typedef struct { char path[1024]; FILE *f; int64_t size; unsigned stamp; } PoolEnt;
 static PoolEnt g_pool[ASSET_POOL_SLOTS];
 static unsigned g_pool_clock;
