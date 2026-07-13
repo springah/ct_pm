@@ -11,6 +11,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <dirent.h>
+#include <pthread.h>
 #include <sys/stat.h>
 
 #include "config.h"
@@ -43,6 +44,21 @@ static void resolve(char *out, size_t out_size, const char *name) {
   snprintf(out, out_size, "%s/%s", ASSETS_DIR, name);
 }
 
+// CT_IOLOG: aggregate counters on the AAsset path (boot traffic goes through
+// here, not the stdio/raw-fd shims). Opens are logged individually; reads and
+// seeks as periodic rate lines. Diagnostics only -- races are tolerable.
+static int g_iolog = -1;
+static unsigned long g_aa_reads, g_aa_bytes, g_aa_seeks;
+static inline int iolog_on(void) {
+  if (g_iolog < 0) g_iolog = getenv("CT_IOLOG") ? 1 : 0;
+  return g_iolog;
+}
+static void iolog_tick(void) {
+  if (((g_aa_reads + g_aa_seeks) & 0xFFF) == 0)
+    fprintf(stderr, "iolog: aasset reads=%lu (%lu KB) seeks=%lu\n",
+            g_aa_reads, g_aa_bytes >> 10, g_aa_seeks);
+}
+
 int asset_exists(const char *name) {
   char path[1024];
   resolve(path, sizeof(path), name);
@@ -61,6 +77,10 @@ int asset_open_fd(const char *name, int64_t *out_off, int64_t *out_len) {
     close(fd);
     return -1;
   }
+  // CT_IOLOG: these fds are streamed by the engine with unbuffered read/lseek
+  // (counted in imports.c); log which files take that path.
+  if (iolog_on())
+    fprintf(stderr, "iolog: openfd %s (%lld KB)\n", path, (long long)st.st_size >> 10);
   if (out_off) *out_off = 0;
   if (out_len) *out_len = (int64_t)st.st_size;
   return fd;
@@ -77,7 +97,56 @@ struct CtAsset {
   int64_t size;
   int64_t pos;
   uint8_t *whole;   // lazily materialised for AAsset_getBuffer
+  char path[1024];  // resolved path, for the reopen pool
 };
+
+// Reopen pool: the engine reopens resources.bin for nearly every sub-file
+// access (CT_IOLOG counted ~150 reopens just booting to the title), paying
+// fopen + a fresh stream buffer + a size probe each time. Closed archive
+// streams are parked here keyed by path and revived on the next open, so the
+// churn collapses to an fseek. Archives only (>= 1 MB); the AAsset API is
+// read-only, so a revived stream can never observe stale data.
+#define ASSET_POOL_SLOTS 4
+#define ASSET_POOL_MIN_SIZE (1024 * 1024)
+typedef struct { char path[1024]; FILE *f; int64_t size; unsigned stamp; } PoolEnt;
+static PoolEnt g_pool[ASSET_POOL_SLOTS];
+static unsigned g_pool_clock;
+static pthread_mutex_t g_pool_mtx = PTHREAD_MUTEX_INITIALIZER;
+
+static FILE *pool_take(const char *path, int64_t *size) {
+  FILE *f = NULL;
+  pthread_mutex_lock(&g_pool_mtx);
+  for (int i = 0; i < ASSET_POOL_SLOTS; i++) {
+    if (g_pool[i].f && !strcmp(g_pool[i].path, path)) {
+      f = g_pool[i].f;
+      *size = g_pool[i].size;
+      g_pool[i].f = NULL;
+      break;
+    }
+  }
+  pthread_mutex_unlock(&g_pool_mtx);
+  return f;
+}
+
+// Takes ownership of f when it returns 1; caller keeps (and closes) it on 0.
+static int pool_put(const char *path, FILE *f, int64_t size) {
+  if (size < ASSET_POOL_MIN_SIZE)
+    return 0;
+  pthread_mutex_lock(&g_pool_mtx);
+  int slot = 0;
+  for (int i = 0; i < ASSET_POOL_SLOTS; i++) {
+    if (!g_pool[i].f) { slot = i; break; }
+    if (g_pool[i].stamp < g_pool[slot].stamp) slot = i; // else evict oldest
+  }
+  if (g_pool[slot].f)
+    fclose(g_pool[slot].f);
+  snprintf(g_pool[slot].path, sizeof(g_pool[slot].path), "%s", path);
+  g_pool[slot].f = f;
+  g_pool[slot].size = size;
+  g_pool[slot].stamp = ++g_pool_clock;
+  pthread_mutex_unlock(&g_pool_mtx);
+  return 1;
+}
 
 void *AAssetManager_fromJava_fake(void *env, void *mgr) {
   (void)env; (void)mgr;
@@ -89,19 +158,42 @@ void *AAssetManager_open_fake(void *mgr, const char *path, int mode) {
   char real[1024];
   resolve(real, sizeof(real), path);
 
-  FILE *f = fopen(real, "rb");
-  if (!f)
+  CtAsset *a = calloc(1, sizeof(*a));
+  if (!a)
     return NULL;
 
-  CtAsset *a = calloc(1, sizeof(*a));
-  if (!a) { fclose(f); return NULL; }
+  int64_t size = 0;
+  FILE *f = pool_take(real, &size);
+  if (f) {
+    fseek(f, 0, SEEK_SET); // revived stream: present as a fresh open
+    if (iolog_on())
+      fprintf(stderr, "iolog: aopen %s (pooled)\n", real);
+  } else {
+    f = fopen(real, "rb");
+    if (!f) { free(a); return NULL; }
+    // a generous buffer; archives are read in long sequential bursts.
+    // CT_IOBUF_KB tunes it on-device without a rebuild (default 256).
+    static int bufkb = -1;
+    if (bufkb < 0) {
+      const char *e = getenv("CT_IOBUF_KB");
+      bufkb = (e && atoi(e) > 0) ? atoi(e) : 256;
+    }
+    setvbuf(f, NULL, _IOFBF, (size_t)bufkb * 1024);
+#if !defined(__SWITCH__) && defined(POSIX_FADV_SEQUENTIAL)
+    // hint the kernel too (whole-file streams like the FMVs benefit; a random
+    // pattern just leaves the readahead heuristic in charge, so it can't hurt)
+    posix_fadvise(fileno(f), 0, 0, POSIX_FADV_SEQUENTIAL);
+#endif
+    if (iolog_on())
+      fprintf(stderr, "iolog: aopen %s\n", real);
+    fseek(f, 0, SEEK_END);
+    size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+  }
 
-  // a generous buffer; archives are read in long sequential bursts
-  setvbuf(f, NULL, _IOFBF, 256 * 1024);
-  fseek(f, 0, SEEK_END);
-  a->size = ftell(f);
-  fseek(f, 0, SEEK_SET);
+  a->size = size;
   a->f = f;
+  snprintf(a->path, sizeof(a->path), "%s", real);
   return a;
 }
 
@@ -109,7 +201,7 @@ void AAsset_close_fake(void *asset) {
   CtAsset *a = asset;
   if (!a)
     return;
-  if (a->f)
+  if (a->f && !pool_put(a->path, a->f, a->size))
     fclose(a->f);
   free(a->whole);
   free(a);
@@ -121,6 +213,11 @@ int AAsset_read_fake(void *asset, void *buf, size_t count) {
     return -1;
   size_t n = fread(buf, 1, count, a->f);
   a->pos += (int64_t)n;
+  if (iolog_on()) {
+    g_aa_reads++;
+    g_aa_bytes += (unsigned long)n;
+    iolog_tick();
+  }
   return (int)n;
 }
 
@@ -135,6 +232,7 @@ int64_t AAsset_seek64_fake(void *asset, int64_t off, int whence) {
   if (fseek(a->f, (long)off, whence) != 0)
     return -1;
   a->pos = (int64_t)ftell(a->f);
+  if (iolog_on()) { g_aa_seeks++; iolog_tick(); }
   return a->pos;
 }
 

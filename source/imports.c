@@ -259,6 +259,37 @@ static void *dlopen_fake(const char *name, int flag) { (void)name; (void)flag; r
 static int dlclose_fake(void *h) { (void)h; return 0; }
 static const char *dlerror_fake(void) { return NULL; }
 
+// CT_IOLOG: aggregate counters on the raw-fd file path (the engine streams the
+// fds handed out by getAssetFileDescriptor through plain read/lseek with no
+// buffering -- see asset_open_fd). Set CT_IOLOG=1 to get periodic rate lines in
+// log.txt; that capture decides whether the scene-load hitches are seeky raw-fd
+// traffic (=> fd cache / fadvise(RANDOM)) or stdio-side (=> buffer tuning).
+// One predictable branch per call when disabled.
+static int g_iolog = -1;
+static unsigned long g_io_reads, g_io_bytes, g_io_seeks;
+static inline int iolog_on(void) {
+  if (g_iolog < 0) g_iolog = getenv("CT_IOLOG") ? 1 : 0;
+  return g_iolog;
+}
+static void iolog_tick(void) {
+  if (((g_io_reads + g_io_seeks) & 0xFFF) == 0)
+    fprintf(stderr, "iolog: raw fd reads=%lu (%lu KB) seeks=%lu\n",
+            g_io_reads, g_io_bytes >> 10, g_io_seeks);
+}
+static ssize_t read_iolog(int fd, void *buf, size_t n) {
+  ssize_t r = read(fd, buf, n);
+  if (iolog_on()) {
+    g_io_reads++;
+    if (r > 0) g_io_bytes += (unsigned long)r;
+    iolog_tick();
+  }
+  return r;
+}
+static off_t lseek_iolog(int fd, off_t off, int whence) {
+  if (iolog_on()) { g_io_seeks++; iolog_tick(); }
+  return lseek(fd, off, whence);
+}
+
 // mmap/munmap are not implemented by newlib/libnx; report failure so callers
 // fall back to read()/fread() (cocos FileUtils does).
 static void *mmap_fake(void *addr, size_t len, int prot, int flags, int fd, long off) {
@@ -611,10 +642,10 @@ DynLibFunction dynlib_functions[] = {
   { "openat", (uintptr_t)&openat_fake },
   { "__openat", (uintptr_t)&openat_fake },
   { "close", (uintptr_t)&close },
-  { "read", (uintptr_t)&read },
+  { "read", (uintptr_t)&read_iolog },
   { "write", (uintptr_t)&write },
-  { "lseek", (uintptr_t)&lseek },
-  { "lseek64", (uintptr_t)&lseek },
+  { "lseek", (uintptr_t)&lseek_iolog },
+  { "lseek64", (uintptr_t)&lseek_iolog },
   { "ftruncate", (uintptr_t)&ftruncate },
   { "truncate", (uintptr_t)&truncate },
   { "unlink", (uintptr_t)&unlink },

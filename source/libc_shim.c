@@ -265,8 +265,19 @@ FILE *fopen_fake(const char *path, const char *mode) {
   }
   if (strchr(mode, 'r')) {
     const char *ext = strrchr(path, '.');
-    if (ext && (strcasecmp(ext, ".dat") == 0 || strcasecmp(ext, ".bin") == 0))
+    if (ext && (strcasecmp(ext, ".dat") == 0 || strcasecmp(ext, ".bin") == 0)) {
       setvbuf(f, NULL, _IOFBF, 256 * 1024);
+#if !defined(__SWITCH__) && defined(POSIX_FADV_SEQUENTIAL)
+      posix_fadvise(fileno(f), 0, 0, POSIX_FADV_SEQUENTIAL); // kernel-side hint
+#endif
+      // CT_IOLOG: release-visible open trace (debugPrintf is compiled out) --
+      // shows whether the archives go through this buffered stdio path or the
+      // raw-fd one counted in imports.c.
+      static int iolog = -1;
+      if (iolog < 0) iolog = getenv("CT_IOLOG") ? 1 : 0;
+      if (iolog)
+        fprintf(stderr, "iolog: fopen %s\n", path);
+    }
     if (path && (strstr(path, ".dat") || strstr(path, "msg") ||
                  strstr(path, "Localize") || strstr(path, "resources") ||
                  strstr(path, "007"))) {
