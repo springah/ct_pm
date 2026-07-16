@@ -53,8 +53,22 @@ section, milestone history, and the `os_*` abstraction map.
 
 ## Configuration
 
-`config.txt` (created on first run): `screen_width`/`screen_height` (`-1` = panel default),
-`language` (`en fr de it es ja ko zh`). Launcher env: `CT_FONT_SCALE` tunes the UI font size.
+`config.txt` (created on first run):
+* `screen_width` / `screen_height` — `-1` = panel default.
+* `language` — in-game text/UI localization; the game ships all nine under
+  `Localize/<code>/`. One of `en fr de it es ja ko zh` (`zh-Hant` / `zh_TW` = Traditional
+  Chinese). Each code loads its own localized data; an unrecognized value falls back to
+  English.
+* `render_scale` — internal render resolution as a fraction of the panel: the engine
+  renders into a `panel × scale` FBO that is upscaled at present. Defaults to **0.75**
+  (≈960×540 on a 720p panel) to keep GPU-bound handhelds at full speed; set `1` for
+  native/off. See `source/rescale.c`.
+
+Launcher env overrides: `CT_FONT_SCALE` (UI font size, default `1.5`), `CT_RENDER_SCALE`
+(overrides `render_scale`), and `CT_TEXT_SHADOW` (`off` / `auto` / `dx,dy,opacity` — the
+SNES-style 1px drop-shadow is baked in otherwise). The launcher also adds a temporary
+zram swap and eases the CPU governor for the session (`CT_GOV` / `CT_MIN_KHZ`), restoring
+both on exit.
 
 ## Pixel-art mods (optional)
 
