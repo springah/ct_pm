@@ -57,12 +57,32 @@ section, milestone history, and the `os_*` abstraction map.
 * `screen_width` / `screen_height` — `-1` = panel default.
 * `language` — in-game text/UI localization; the game ships all nine under
   `Localize/<code>/`. One of `en fr de it es ja ko zh` (`zh-Hant` / `zh_TW` = Traditional
-  Chinese). Each code loads its own localized data; an unrecognized value falls back to
+  Chinese), or `default` (the shipped default) to auto-detect from the system `$LANG`.
+  Each code loads its own localized data; an unrecognized/unsupported value falls back to
   English.
 * `render_scale` — internal render resolution as a fraction of the panel: the engine
   renders into a `panel × scale` FBO that is upscaled at present. Defaults to **0.75**
   (≈960×540 on a 720p panel) to keep GPU-bound handhelds at full speed; set `1` for
   native/off. See `source/rescale.c`.
+* `gl_threaded` / `gl_no_error` — mesa/GLES tuning, both **on** by default: run GL
+  submission on a worker core (`mesa_glthread`) and skip mesa's per-call validation
+  (`MESA_NO_ERROR`). Set `0` if a driver misbehaves.
+
+**Runtime engine patches** — all default **off**. Each write is verified against the
+expected instruction and only applied on the supported Chrono Trigger Android **v2.1.5**
+libchrono, so a wrong build safely skips them. Flip to `1` to enable:
+* `cursor_fix` — white-on-dark menu selection instead of the mobile cream colour-invert
+  highlight.
+* `remove_mobile_ui` — hide the on-screen touch overlays (field/world/title buttons,
+  per-menu back/close, race + colour prompts); movement default RUN→WALK.
+* `controller_glyphs` — render `<BTN_*>` button prompts + bracketed glyphs.
+* `fix_diagonal_movement` — smooth the field diagonal-movement stutter.
+
+**Input:**
+* `key_zl` / `key_zr` / `key_start` / `key_select` — remap the four extra buttons to any
+  of `a b x y l r zl zr start select menu none`. Defaults map each to itself (stock).
+* `right_stick_mirror` — `1` (default) = the right stick also drives movement when the
+  left stick is centred; `0` = left stick only.
 
 Launcher env overrides: `CT_FONT_SCALE` (UI font size, default `1.5`), `CT_RENDER_SCALE`
 (overrides `render_scale`), and `CT_TEXT_SHADOW` (`off` / `auto` / `dx,dy,opacity` — the
