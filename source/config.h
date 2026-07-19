@@ -53,9 +53,17 @@ typedef struct {
   // Runtime libchrono patches (patches.h; each gated + old-word verified, and
   // only applied when the v2.1.5 fingerprint matches). Default off -- flip to 1
   // in config.txt after an on-device check.
-  //   cursor_fix -- white-on-dark menu selection instead of the mobile build's
-  //                 cream colour-invert highlight.
+  //   cursor_fix            -- white-on-dark menu selection instead of the mobile
+  //                            build's cream colour-invert highlight.
+  //   remove_mobile_ui      -- hide the on-screen touch overlays (field/world/title
+  //                            buttons, per-menu back/close, race + colour prompts);
+  //                            movement default RUN->WALK.
+  //   controller_glyphs     -- render <BTN_*> button prompts + bracketed PUA glyphs.
+  //   fix_diagonal_movement -- smooth the field diagonal-movement stutter.
   int cursor_fix;
+  int remove_mobile_ui;
+  int controller_glyphs;
+  int fix_diagonal_movement;
 } Config;
 
 extern Config config;
