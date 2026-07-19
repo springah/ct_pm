@@ -383,6 +383,32 @@ int movie_play(const char *name) {
     av_packet_unref(pkt);
   }
 
+  // Flush the H.264 decoder: with thread_count=3 several frames stay buffered
+  // (typically the fade-to-black tail). Without draining them a cutscene can cut
+  // on a non-faded frame, leaving the screen black until the engine repaints.
+  // Mirror the in-loop present path (pace to PTS, honour skip) for each.
+  if (!stop && vdec && gl_ok) {
+    avcodec_send_packet(vdec, NULL); // NULL packet = enter flush/drain mode
+    while (avcodec_receive_frame(vdec, frame) == 0) {
+      uint8_t *dst[4] = { rgba, NULL, NULL, NULL };
+      int dstst[4] = { vw * 4, 0, 0, 0 };
+      sws_scale(sws, (const uint8_t *const *)frame->data, frame->linesize, 0, vh, dst, dstst);
+      double pts = (frame->best_effort_timestamp != AV_NOPTS_VALUE)
+                     ? (double)frame->best_effort_timestamp * tb_v : 0.0;
+      for (int spin = 0; spin < 2000 && !stop; spin++) {
+        double clk = (aidx >= 0)
+                       ? (double)opensles_movie_samples_played() / (double)dev_rate
+                       : (double)(armGetSystemTick() - t0) / tickHz;
+        if (clk + 0.001 >= pts) break;
+        svcSleepThread(2000000ull); // 2ms
+        if (MOVIE_SKIP()) stop = 1;
+      }
+      if (MOVIE_SKIP()) stop = 1;
+      if (gl_ok) { gl_draw(&gl, rgba, vw, vh); gl_present(); }
+      if (stop) break;
+    }
+  }
+
 done:
   if (gl_ok) gl_free(&gl);
   // Restore the depth/blend enables to whatever the engine had on entry.
