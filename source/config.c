@@ -122,7 +122,11 @@ int write_config(const char *file) {
 
   #define CONFIG_VAR_INT(var) fprintf(f, "%s %d\n", #var, config.var)
   #define CONFIG_VAR_FLOAT(var) fprintf(f, "%s %g\n", #var, config.var)
-  #define CONFIG_VAR_STR(var) fprintf(f, "%s %s\n", #var, config.var[0] ? config.var : LANG_DEFAULT)
+  // read_config seeds every string var to a non-empty default (language via the
+  // blank-line restore above; the key_* remaps in the defaults block), so emit
+  // the field verbatim -- a LANG_DEFAULT fallback here would wrongly stamp the
+  // language sentinel onto an empty keybind field.
+  #define CONFIG_VAR_STR(var) fprintf(f, "%s %s\n", #var, config.var)
   CONFIG_VARS
   #undef CONFIG_VAR_INT
   #undef CONFIG_VAR_FLOAT
