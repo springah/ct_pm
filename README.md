@@ -68,9 +68,9 @@ section, milestone history, and the `os_*` abstraction map.
   submission on a worker core (`mesa_glthread`) and skip mesa's per-call validation
   (`MESA_NO_ERROR`). Set `0` if a driver misbehaves.
 
-**Runtime engine patches** — all default **off**. Each write is verified against the
-expected instruction and only applied on the supported Chrono Trigger Android **v2.1.5**
-libchrono, so a wrong build safely skips them. Flip to `1` to enable:
+**Runtime engine patches** — **on by default** (verified on-device against the supported
+Chrono Trigger Android **v2.1.5** libchrono; each write is checked against the expected
+instruction, so a different build safely skips them). Set `0` to disable any one:
 * `cursor_fix` — white-on-dark menu selection instead of the mobile cream colour-invert
   highlight.
 * `remove_mobile_ui` — hide the on-screen touch overlays (field/world/title buttons,
