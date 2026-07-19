@@ -390,6 +390,12 @@ static void update_keys(void) {
 
 static int lang_index(void) {
   const char *l = config.language;
+#ifndef __SWITCH__
+  // "default" = auto-detect: resolve the system language ($LANG) onto one of
+  // the codes below (regional variants collapse; unsupported -> en).
+  if (!strcmp(l, "default"))
+    l = os_system_language();
+#endif
   if (!strcmp(l, "ja")) return 0;
   if (!strcmp(l, "en")) return 1;
   if (!strcmp(l, "de")) return 2;
@@ -577,6 +583,12 @@ int main(void) {
   if (SDL_Init(SDL_INIT_AUDIO) < 0)
     debugPrintf("SDL_Init(audio) failed: %s\n", SDL_GetError());
 
+  // mesa/GLES tuning must be set before the GL context is created (egl_init ->
+  // os_gfx_init on Linux). glthread offloads GL submission to a worker core;
+  // MESA_NO_ERROR drops per-call validation cocos's well-formed calls don't need.
+  if (config.gl_threaded) setenv("mesa_glthread", "true", 1);
+  if (config.gl_no_error) setenv("MESA_NO_ERROR", "1", 1);
+
   if (!egl_init())
     fatal_error("Failed to create an OpenGL ES 2.0 context.");
 
@@ -752,7 +764,15 @@ int main(void) {
   }
 #endif
 
-  int paused = 0;
+  // Start "paused" so the first focused frame fires nativeOnResume ->
+  // AppDelegate::applicationWillEnterForeground, exactly as Android does at
+  // launch. That callback seeds the play-timer (cSfcWork::SetStartTime sets
+  // m_lastTime = time()). Without this initial resume, m_lastTime stays 0 and
+  // the first SetPlayTime accumulates (time() - 0) = the whole Unix epoch, so
+  // the in-game TIME clock saturates to 99:59 in the save. On Linux/SDL the
+  // window usually starts unfocused (making this a no-op), but under gamescope/
+  // fullscreen it can start already focused -- then only this guarantees the seed.
+  int paused = 1;
   int boot_frames = 0;
 #ifndef __SWITCH__
   const int cap_enabled = getenv("CT_CAPTURE") != NULL; // hoist out of the frame loop

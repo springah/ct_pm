@@ -107,7 +107,8 @@ void os_input_poll(os_input_state *st);
 // Filesystem / environment.
 // os_data_dir(): where libchrono.so + assets/ + config live.
 //   Switch: "/switch/ct/".  Linux: $GAMEDIR (PortMaster) else cwd.
-// os_system_language(): 2-letter code; config can override (en/ja/...).
+// os_system_language(): system UI language collapsed onto a resources.bin code
+//   (en/ja/de/it/es/fr/zh/zh-Hant/ko), English fallback; config can override.
 // os_is_focused(): Switch applet focus; Linux SDL window focus (skip rendering
 //   when false to save battery).
 // ---------------------------------------------------------------------------

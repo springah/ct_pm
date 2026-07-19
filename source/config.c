@@ -17,7 +17,9 @@
   CONFIG_VAR_INT(screen_width); \
   CONFIG_VAR_INT(screen_height); \
   CONFIG_VAR_STR(language); \
-  CONFIG_VAR_FLOAT(render_scale);
+  CONFIG_VAR_FLOAT(render_scale); \
+  CONFIG_VAR_INT(gl_threaded); \
+  CONFIG_VAR_INT(gl_no_error);
 
 Config config;
 static int config_needs_rewrite = 0;
@@ -45,6 +47,8 @@ int read_config(const char *file) {
   config.screen_height = -1;
   strlcpy(config.language, LANG_DEFAULT, sizeof(config.language));
   config.render_scale = 0.75f; // GPU-bound handhelds: render 3/4-size, upscale
+  config.gl_threaded = 1;      // offload GL submission to a worker core (mesa_glthread)
+  config.gl_no_error = 1;      // skip mesa's per-call GL validation (MESA_NO_ERROR)
 
   FILE *f = fopen(file, "r");
   if (f == NULL)
@@ -74,6 +78,11 @@ int read_config(const char *file) {
   } while (!feof(f));
 
   fclose(f);
+
+  // A malformed/blank "language" line would leave the field empty; restore the
+  // default so lang_index() gets a valid value (empty would silently mean en).
+  if (config.language[0] == 0)
+    strlcpy(config.language, LANG_DEFAULT, sizeof(config.language));
 
   return config_needs_rewrite ? 1 : 0;
 }

@@ -12,6 +12,7 @@
 #include <stdlib.h>
 #include <stdarg.h>
 #include <string.h>
+#include <ctype.h>
 #include <unistd.h>
 #include <sys/mman.h>
 #include <SDL2/SDL.h>
@@ -101,7 +102,6 @@ int os_gfx_init(int req_w, int req_h, int *out_w, int *out_h) {
     SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, 8);
     SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE, 8);
     SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 8);
-    SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
     SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
 
@@ -112,12 +112,23 @@ int os_gfx_init(int req_w, int req_h, int *out_w, int *out_h) {
       flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
     int w = req_w > 0 ? req_w : 1280;
     int h = req_h > 0 ? req_h : 720;
-    s_win = SDL_CreateWindow("ct", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-                             w, h, flags);
-    if (!s_win) { os_log("SDL_CreateWindow: %s\n", SDL_GetError()); return -1; }
 
-    s_ctx = SDL_GL_CreateContext(s_win);
-    if (!s_ctx) { os_log("SDL_GL_CreateContext: %s\n", SDL_GetError()); return -1; }
+    // Try a lighter 16-bit depth buffer first -- the 2D renderer's precision
+    // needs nowhere near 24-bit, and trimming it saves a little framebuffer
+    // bandwidth. Fall back to 24-bit if a driver only exposes a combined
+    // 24-depth/8-stencil format, so a missing 16/8 combo never blocks boot.
+    const int depth_bits[] = { 16, 24 };
+    for (unsigned i = 0; i < 2; i++) {
+      SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, depth_bits[i]);
+      s_win = SDL_CreateWindow("ct", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+                               w, h, flags);
+      if (!s_win) { os_log("SDL_CreateWindow (depth %d): %s\n", depth_bits[i], SDL_GetError()); continue; }
+      s_ctx = SDL_GL_CreateContext(s_win);
+      if (s_ctx) break;
+      os_log("SDL_GL_CreateContext (depth %d): %s\n", depth_bits[i], SDL_GetError());
+      SDL_DestroyWindow(s_win); s_win = NULL;
+    }
+    if (!s_win || !s_ctx) { os_log("no GL context (tried 16- and 24-bit depth)\n"); return -1; }
     SDL_GL_MakeCurrent(s_win, s_ctx);
     SDL_GL_SetSwapInterval(1); // vsync
 
@@ -388,10 +399,37 @@ const char *os_data_dir(void) {
 }
 
 const char *os_system_language(void) {
-    const char *l = getenv("LANG");      // config.txt overrides this anyway
-    static char code[3] = "en";
-    if (l && strlen(l) >= 2) { code[0] = l[0]; code[1] = l[1]; code[2] = 0; }
-    return code;
+    // Resolve the system UI language onto one of the codes resources.bin ships
+    // (ja/en/de/it/es/fr/zh/zh-Hant/ko); regional variants collapse onto their
+    // base, and anything unsupported (nl/pt/ru/...) falls back to English --
+    // this backs config.language == "default". config.txt still overrides it.
+    const char *l = getenv("LC_ALL");
+    if (!l || !*l) l = getenv("LC_MESSAGES");
+    if (!l || !*l) l = getenv("LANG");
+    if (!l || strlen(l) < 2) return "en";
+
+    // Split "ll_RR.ENC" / "ll-RR" into a 2-letter language + uppercase region.
+    char lang[3] = { 0 }, region[8] = { 0 };
+    lang[0] = (char)tolower((unsigned char)l[0]);
+    lang[1] = (char)tolower((unsigned char)l[1]);
+    const char *p = l + 2;
+    if (*p == '_' || *p == '-') {
+        p++;
+        unsigned r = 0;
+        while (*p && *p != '.' && *p != '@' && r < sizeof(region) - 1)
+            region[r++] = (char)toupper((unsigned char)*p++);
+    }
+
+    if (!strcmp(lang, "ja")) return "ja";
+    if (!strcmp(lang, "de")) return "de";
+    if (!strcmp(lang, "it")) return "it";
+    if (!strcmp(lang, "es")) return "es";
+    if (!strcmp(lang, "fr")) return "fr";
+    if (!strcmp(lang, "ko")) return "ko";
+    if (!strcmp(lang, "zh"))
+        return (!strcmp(region, "TW") || !strcmp(region, "HK") || !strcmp(region, "MO"))
+                 ? "zh-Hant" : "zh";
+    return "en"; // en + everything resources.bin lacks
 }
 
 bool os_is_focused(void) {
