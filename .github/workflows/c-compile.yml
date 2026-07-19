@@ -56,8 +56,8 @@ jobs:
                source/asset.c source/config.c source/error.c source/gfx.c \
                source/imports.c source/jni_fake.c source/libc_shim.c \
                source/main.c source/movelog.c source/movie_player.c \
-               source/opensles.c source/prefs.c source/rescale.c \
-               source/so_util.c source/util.c"
+               source/opensles.c source/patches.c source/prefs.c \
+               source/rescale.c source/so_util.c source/util.c"
 
           mkdir -p build
           rc=0

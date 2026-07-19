@@ -707,10 +707,15 @@ int main(void) {
   // version check -- the hook writes a raw v2.1.5 offset.
   if (g_libchrono_v215) {
     movelog_install(&game_mod);
-    // Config-gated runtime ARM64 patches (patches.h). load_base is still RW
+#ifndef __SWITCH__
+    // Config-gated runtime ARM64 patches (patches.c). load_base is still RW
     // here (pre-so_finalize); each write verifies its expected old word, so a
-    // non-v2.1.5 build skips per-site instead of corrupting.
+    // non-v2.1.5 build skips per-site instead of corrupting. Linux/PortMaster
+    // only -- on Switch these edits ship via ct_nx's own patch mechanism, and
+    // some entries (caves, the movement default) write unconditionally, so we
+    // must not run this pass against the Switch loader's mappings.
     apply_game_patches(&game_mod);
+#endif
   }
 
   so_finalize(&cpp_mod);

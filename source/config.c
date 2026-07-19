@@ -58,7 +58,7 @@ int read_config(const char *file) {
   config.render_scale = 0.75f; // GPU-bound handhelds: render 3/4-size, upscale
   config.gl_threaded = 1;      // offload GL submission to a worker core (mesa_glthread)
   config.gl_no_error = 1;      // skip mesa's per-call GL validation (MESA_NO_ERROR)
-  config.cursor_fix = 1;            // libchrono patch groups (patches.h); on by default (v2.1.5-verified on-device)
+  config.cursor_fix = 1;            // libchrono patch groups (patches.c); on by default (v2.1.5-verified on-device)
   config.remove_mobile_ui = 1;
   config.controller_glyphs = 1;
   config.fix_diagonal_movement = 1;
