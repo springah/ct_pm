@@ -23,7 +23,12 @@
   CONFIG_VAR_INT(cursor_fix); \
   CONFIG_VAR_INT(remove_mobile_ui); \
   CONFIG_VAR_INT(controller_glyphs); \
-  CONFIG_VAR_INT(fix_diagonal_movement);
+  CONFIG_VAR_INT(fix_diagonal_movement); \
+  CONFIG_VAR_STR(key_zl); \
+  CONFIG_VAR_STR(key_zr); \
+  CONFIG_VAR_STR(key_start); \
+  CONFIG_VAR_STR(key_select); \
+  CONFIG_VAR_INT(right_stick_mirror);
 
 Config config;
 static int config_needs_rewrite = 0;
@@ -57,6 +62,13 @@ int read_config(const char *file) {
   config.remove_mobile_ui = 0;
   config.controller_glyphs = 0;
   config.fix_diagonal_movement = 0;
+  // Input remap: default each extra button to its own stock action (a no-op
+  // remap) so config.txt shows a clear, editable value rather than a blank.
+  strlcpy(config.key_zl, "zl", sizeof(config.key_zl));
+  strlcpy(config.key_zr, "zr", sizeof(config.key_zr));
+  strlcpy(config.key_start, "start", sizeof(config.key_start));
+  strlcpy(config.key_select, "select", sizeof(config.key_select));
+  config.right_stick_mirror = 1; // right stick mirrors movement (current behaviour)
 
   FILE *f = fopen(file, "r");
   if (f == NULL)

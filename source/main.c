@@ -479,7 +479,7 @@ typedef struct {
 // (SELECT(1022), the C/Z/PAUSE keys, triggers and thumb-clicks are NOT decoded by
 // the engine -- so Select has no native binding; the SNES world-map toggle isn't
 // reachable via gamepad. ZL/ZR are kept as triggers in case a later build binds them.)
-static const LinKeyMap g_keymap[] = {
+static LinKeyMap g_keymap[] = {
   { OS_BTN_A,      AK_ENTER,   CC_BTN_A },       // right button: confirm  (bit7)
   { OS_BTN_B,      AK_BACK,    CC_BTN_B },       // bottom button: cancel/dash (bit3)
   { OS_BTN_X,      AK_NONE,    CC_BTN_Y },       // top button: open Menu  (X/Y swap on -> send BUTTON_Y)
@@ -496,6 +496,54 @@ static const LinKeyMap g_keymap[] = {
   { OS_BTN_RIGHT,  AK_DRIGHT,  CC_DPAD_RIGHT },
 };
 #define NUM_KEYMAP (sizeof(g_keymap) / sizeof(*g_keymap))
+
+// --- configurable button remap (ct_nx-style) -------------------------------
+// Remap the four "extra" physical buttons (ZL, ZR, Start, Select) to any engine
+// action below, via config.txt key_zl/key_zr/key_start/key_select. Only the
+// emitted action changes; the g_keymap row's OS_BTN_* bit (edge/press tracking)
+// stays on the real button.
+typedef struct { int android_kc; int cc_key; } KeyEmit;
+
+static int resolve_key_target(const char *name, KeyEmit *out) {
+  static const struct { const char *n; KeyEmit e; } t[] = {
+    { "a",      { AK_ENTER, CC_BTN_A } },
+    { "b",      { AK_BACK,  CC_BTN_B } },
+    { "x",      { AK_NONE,  CC_BTN_Y } },  // top/menu (X/Y crossed, see g_keymap)
+    { "y",      { AK_NONE,  CC_BTN_X } },
+    { "l",      { AK_NONE,  CC_L_SHOULDER } },
+    { "r",      { AK_NONE,  CC_R_SHOULDER } },
+    { "zl",     { AK_NONE,  CC_L_TRIGGER } },
+    { "zr",     { AK_NONE,  CC_R_TRIGGER } },
+    { "start",  { AK_NONE,  CC_BTN_START } },
+    { "select", { AK_NONE,  CC_BTN_SELECT } },
+    { "menu",   { AK_MENU,  CC_BTN_Y } },
+    { "none",   { AK_NONE,  0 } },
+  };
+  if (!name || !name[0]) return 0;
+  for (unsigned i = 0; i < sizeof(t) / sizeof(*t); i++)
+    if (!strcmp(name, t[i].n)) { *out = t[i].e; return 1; }
+  return 0;
+}
+
+// Overwrite the g_keymap row carrying `bit` with the target named by `cfg`.
+static void remap_button(uint32_t bit, const char *cfg) {
+  KeyEmit e;
+  if (!resolve_key_target(cfg, &e)) return; // empty/unknown -> keep stock
+  for (unsigned i = 0; i < NUM_KEYMAP; i++) {
+    if (g_keymap[i].bit == bit) {
+      g_keymap[i].android_kc = e.android_kc;
+      g_keymap[i].cc_key     = e.cc_key;
+      return;
+    }
+  }
+}
+
+static void apply_input_remap(void) {
+  remap_button(OS_BTN_ZL,     config.key_zl);
+  remap_button(OS_BTN_ZR,     config.key_zr);
+  remap_button(OS_BTN_START,  config.key_start);
+  remap_button(OS_BTN_SELECT, config.key_select);
+}
 
 static os_input_state g_in;
 static uint32_t g_prev_buttons = 0;
@@ -529,9 +577,10 @@ static void update_keys(void) {
     // movement axes: the left stick drives, and when an axis is centred the right stick takes
     // over -- so either stick moves the character. (RX/RY are no longer emitted; re-using LX/LY
     // avoids two sources fighting on the same axis.)
+    const int mirror = config.right_stick_mirror;
     const float axes[2] = {
-      (g_in.lx > -dz && g_in.lx < dz) ? g_in.rx : g_in.lx,
-      (g_in.ly > -dz && g_in.ly < dz) ? g_in.ry : g_in.ly,
+      (mirror && g_in.lx > -dz && g_in.lx < dz) ? g_in.rx : g_in.lx,
+      (mirror && g_in.ly > -dz && g_in.ly < dz) ? g_in.ry : g_in.ly,
     };
     static const int axis_key[2] = { CC_JOY_LX, CC_JOY_LY };
     static float prev_axis[2] = { 0, 0 };
@@ -574,6 +623,7 @@ int main(void) {
   check_syscalls();
   check_data();
   set_screen_size(config.screen_width, config.screen_height);
+  apply_input_remap(); // config.txt button remap for ZL/ZR/Start/Select
 
 #ifdef __SWITCH__
   plInitialize(PlServiceType_User);

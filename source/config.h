@@ -64,6 +64,17 @@ typedef struct {
   int remove_mobile_ui;
   int controller_glyphs;
   int fix_diagonal_movement;
+  // Input: remap the four "extra" physical buttons to an engine action. Each of
+  // key_zl/key_zr/key_start/key_select takes one of:
+  //   a b x y l r zl zr start select menu none
+  // (only the emitted action changes; edge/press stays on the real button).
+  // Defaults keep the stock binding. right_stick_mirror: 1 = the right stick
+  // also drives movement when the left stick is centred.
+  char key_zl[16];
+  char key_zr[16];
+  char key_start[16];
+  char key_select[16];
+  int right_stick_mirror;
 } Config;
 
 extern Config config;
