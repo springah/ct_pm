@@ -39,6 +39,9 @@ static int g_active = 0;
 static int g_suspended = 0;
 static int g_win_w = 1280, g_win_h = 720;
 static int g_int_w = 0, g_int_h = 0;
+// The on-panel rect the FBO is presented into. Full panel on 16:9/4:3; a
+// centred, full-width sub-rect (letterbox) on a narrower/taller panel.
+static int g_pres_x = 0, g_pres_y = 0, g_pres_w = 1280, g_pres_h = 720;
 
 static GLuint g_fbo, g_color, g_depth, g_stencil;
 static GLuint g_prog, g_vsh, g_fsh;
@@ -94,19 +97,51 @@ static float pick_scale(void) {
   return s;
 }
 
+// Narrowest (tallest) width:height the game is allowed to render at. A panel
+// narrower than this (a square / very tall handheld) gets the game letterboxed
+// to this aspect -- otherwise the engine's adaptive camera over-shows vertical
+// and anchors the UI to the bottom edge. Panels at/above it (16:9, 4:3) are
+// untouched. Default 4:3; lower shows more vertical / smaller bars.
+static float pick_min_aspect(void) {
+  float a = config.min_aspect;
+  const char *env = getenv("CT_MIN_ASPECT");
+  if (env && *env) a = (float)atof(env);
+  if (a < 1.0f) a = 1.0f;  // never taller than square
+  if (a > 2.4f) a = 2.4f;  // sanity cap
+  return a;
+}
+
 void ct_rescale_setup(int win_w, int win_h) {
   g_win_w = win_w; g_win_h = win_h;
+  g_pres_x = 0; g_pres_y = 0; g_pres_w = win_w; g_pres_h = win_h;
 
   const float s = pick_scale();
-  if (s >= 0.995f)
-    return; // native resolution: interpose fully disabled, zero overhead
+  const float min_aspect = pick_min_aspect();
+  const float panel_aspect = (float)win_w / (float)win_h;
 
-  int iw = ((int)((float)win_w * s + 0.5f)) & ~1;
-  int ih = ((int)((float)win_h * s + 0.5f)) & ~1;
+  // Letterbox a panel narrower/taller than min_aspect: present the game full
+  // width at min_aspect, centred vertically (black bars top/bottom).
+  const int letterbox = panel_aspect < min_aspect - 0.001f;
+  if (letterbox) {
+    g_pres_w = win_w;
+    g_pres_h = (int)((float)win_w / min_aspect + 0.5f);
+    if (g_pres_h > win_h) g_pres_h = win_h;
+    g_pres_y = (win_h - g_pres_h) / 2;
+  }
+
+  // The offscreen FBO + blit is needed to downscale for perf OR to draw the
+  // letterbox bars. If neither, render straight to the panel (zero overhead).
+  if (!letterbox && s >= 0.995f)
+    return;
+
+  // Engine/FBO size = the presented rect * render_scale (even; sane floor;
+  // never larger than the rect it is blitted into).
+  int iw = ((int)((float)g_pres_w * s + 0.5f)) & ~1;
+  int ih = ((int)((float)g_pres_h * s + 0.5f)) & ~1;
   if (iw < 320) iw = 320;
   if (ih < 240) ih = 240;
-  if (iw >= win_w || ih >= win_h)
-    return; // panel already small enough that scaling gains nothing
+  if (iw > g_pres_w) iw = g_pres_w;
+  if (ih > g_pres_h) ih = g_pres_h;
 
   while (glGetError() != GL_NO_ERROR) {} // don't misattribute stale errors
 
@@ -169,8 +204,9 @@ void ct_rescale_setup(int win_w, int win_h) {
 
   g_int_w = iw; g_int_h = ih;
   g_active = 1;
-  os_log("rescale: engine renders %dx%d, presented at %dx%d (scale %.3g)\n",
-         iw, ih, win_w, win_h, s);
+  os_log("rescale: engine %dx%d -> present %dx%d @(%d,%d) on %dx%d panel "
+         "(scale %.3g, min_aspect %.3g)\n",
+         iw, ih, g_pres_w, g_pres_h, g_pres_x, g_pres_y, win_w, win_h, s, min_aspect);
 }
 
 void ct_rescale_begin_frame(void) {
@@ -194,12 +230,24 @@ void ct_rescale_present(void) {
   GLboolean sv_cull    = glIsEnabled(GL_CULL_FACE);
 
   glBindFramebuffer(GL_FRAMEBUFFER, 0);
-  glViewport(0, 0, g_win_w, g_win_h);
   glDisable(GL_SCISSOR_TEST);
   glDisable(GL_DEPTH_TEST);
   glDisable(GL_STENCIL_TEST);
   glDisable(GL_BLEND);
   glDisable(GL_CULL_FACE);
+
+  // Letterbox: clear the whole panel to black (the bars), then draw the game
+  // into its centred sub-rect. A full-panel present (16:9/4:3) skips the clear.
+  const int boxed = (g_pres_w != g_win_w) || (g_pres_h != g_win_h);
+  if (boxed) {
+    GLfloat cc[4];
+    glGetFloatv(GL_COLOR_CLEAR_VALUE, cc);
+    glViewport(0, 0, g_win_w, g_win_h);
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+    glClearColor(cc[0], cc[1], cc[2], cc[3]); // restore the engine's clear colour
+  }
+  glViewport(g_pres_x, g_pres_y, g_pres_w, g_pres_h);
 
   glUseProgram(g_prog);
   glActiveTexture(GL_TEXTURE0);
