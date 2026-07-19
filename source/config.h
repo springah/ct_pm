@@ -42,15 +42,6 @@ typedef struct {
   // Internal render scale (Linux/PortMaster; see rescale.c). The engine
   // renders at panel*scale and is upscaled at present; 1 = native/off.
   float render_scale;
-  // Letterbox aspect (rescale.c): the narrowest width:height the game is
-  // allowed to render at. Panels narrower/taller than this (e.g. a 1:1 square
-  // handheld) render the game centred to this aspect with black bars, instead
-  // of the engine's adaptive camera over-showing vertical and anchoring the UI
-  // to the bottom. Only panels narrower than this are touched, so 16:9, 4:3 and
-  // 5:4 handhelds are all unaffected -- in practice only ~1:1 square panels
-  // (e.g. RG CubeXX) get letterboxed. Default 1.1 (near-full, thin bars); raise
-  // for more letterbox, lower for a taller view. Overridable with CT_MIN_ASPECT.
-  float min_aspect;
   // mesa/GLES tuning (Linux/PortMaster). Both default on; set 0 in config.txt
   // if a driver misbehaves.
   //   gl_threaded -- run mesa's GL submission on a worker core (mesa_glthread),

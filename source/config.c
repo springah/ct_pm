@@ -18,7 +18,6 @@
   CONFIG_VAR_INT(screen_height); \
   CONFIG_VAR_STR(language); \
   CONFIG_VAR_FLOAT(render_scale); \
-  CONFIG_VAR_FLOAT(min_aspect); \
   CONFIG_VAR_INT(gl_threaded); \
   CONFIG_VAR_INT(gl_no_error); \
   CONFIG_VAR_INT(cursor_fix); \
@@ -57,7 +56,6 @@ int read_config(const char *file) {
   config.screen_height = -1;
   strlcpy(config.language, LANG_DEFAULT, sizeof(config.language));
   config.render_scale = 0.75f; // GPU-bound handhelds: render 3/4-size, upscale
-  config.min_aspect = 1.1f;    // letterbox square-ish panels (e.g. RG CubeXX 1:1) to ~1.1
   config.gl_threaded = 1;      // offload GL submission to a worker core (mesa_glthread)
   config.gl_no_error = 1;      // skip mesa's per-call GL validation (MESA_NO_ERROR)
   config.cursor_fix = 1;            // libchrono patch groups (patches.h); on by default (v2.1.5-verified on-device)
