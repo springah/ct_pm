@@ -826,8 +826,8 @@ int main(void) {
   // m_lastTime = time()). Without this initial resume, m_lastTime stays 0 and
   // the first SetPlayTime accumulates (time() - 0) = the whole Unix epoch, so
   // the in-game TIME clock saturates to 99:59 in the save. On Linux/SDL the
-  // window usually starts unfocused (making this a no-op), but under gamescope/
-  // fullscreen it can start already focused -- then only this guarantees the seed.
+  // window usually starts unfocused (making this a no-op), but some fullscreen
+  // setups can start it already focused -- then only this guarantees the seed.
   int paused = 1;
   int boot_frames = 0;
 #ifndef __SWITCH__
