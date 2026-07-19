@@ -19,7 +19,8 @@
   CONFIG_VAR_STR(language); \
   CONFIG_VAR_FLOAT(render_scale); \
   CONFIG_VAR_INT(gl_threaded); \
-  CONFIG_VAR_INT(gl_no_error);
+  CONFIG_VAR_INT(gl_no_error); \
+  CONFIG_VAR_INT(cursor_fix);
 
 Config config;
 static int config_needs_rewrite = 0;
@@ -49,6 +50,7 @@ int read_config(const char *file) {
   config.render_scale = 0.75f; // GPU-bound handhelds: render 3/4-size, upscale
   config.gl_threaded = 1;      // offload GL submission to a worker core (mesa_glthread)
   config.gl_no_error = 1;      // skip mesa's per-call GL validation (MESA_NO_ERROR)
+  config.cursor_fix = 0;       // libchrono patch group (patches.h); off until on-device verified
 
   FILE *f = fopen(file, "r");
   if (f == NULL)

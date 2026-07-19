@@ -35,6 +35,7 @@
 #include "prefs.h"
 #include "movie_player.h"
 #include "movelog.h"
+#include "patches.h"
 #include "rescale.h"
 
 static void *heap_so_base = NULL;
@@ -654,8 +655,13 @@ int main(void) {
   // Must be installed while game_mod's .text is still RW (before so_finalize).
   // Has no effect unless CT_MOVELOG=1 is set in the environment. Gated on the
   // version check -- the hook writes a raw v2.1.5 offset.
-  if (g_libchrono_v215)
+  if (g_libchrono_v215) {
     movelog_install(&game_mod);
+    // Config-gated runtime ARM64 patches (patches.h). load_base is still RW
+    // here (pre-so_finalize); each write verifies its expected old word, so a
+    // non-v2.1.5 build skips per-site instead of corrupting.
+    apply_game_patches(&game_mod);
+  }
 
   so_finalize(&cpp_mod);
   so_finalize(&game_mod);

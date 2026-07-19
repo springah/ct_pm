@@ -50,6 +50,12 @@ typedef struct {
   //                  calls are already well-formed, so this is pure CPU savings.
   int gl_threaded;
   int gl_no_error;
+  // Runtime libchrono patches (patches.h; each gated + old-word verified, and
+  // only applied when the v2.1.5 fingerprint matches). Default off -- flip to 1
+  // in config.txt after an on-device check.
+  //   cursor_fix -- white-on-dark menu selection instead of the mobile build's
+  //                 cream colour-invert highlight.
+  int cursor_fix;
 } Config;
 
 extern Config config;
