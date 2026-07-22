@@ -11,7 +11,7 @@ A loader/port of the Android version of *Chrono Trigger*
 Android `arm64-v8a` `.so` files, shims their imports to native libraries, and runs the
 game in a minimal emulated-Android environment via **SDL2 + GLES2**.
 
-This is a sibling of [`ct_nx`](https://github.com/springah/ct_nx) (the Nintendo Switch
+This is a sibling of [`ct_nx`](https://github.com/NaGaa95/ct_nx) (the Nintendo Switch
 port). The codebase is **dual-target**: the OS layer is behind `#ifdef __SWITCH__`, so the
 same `source/` builds for both Switch (libnx) and Linux (SDL2/POSIX, in `portmaster/`).
 
@@ -139,7 +139,7 @@ See [`tools/pixeldemaster/README.md`](tools/pixeldemaster/README.md).
 
 * **fgsfds** — [max_nx](https://github.com/fgsfdsfgs/max_nx), the loader this is based on
 * **TheOfficialFloW** — the original Vita ports that pioneered the technique
-* **NaGaa95** — `ct_nx`, the Switch port this derives from
+* **NaGaa95** — [`ct_nx`](https://github.com/NaGaa95/ct_nx), the Switch port this derives from
 * **JohnnyonFlame** — gmloader-next, reference for the Linux ELF-loader + glibc TLS handling
 * **Caveras** — the *ChronoType* SNES font recreation (CC BY-NC-SA; see `portmaster/pkg/ct/licenses/font-license.txt`)
 * **FFmpeg** — the [FFmpeg project](https://ffmpeg.org) (LGPL v2.1); a minimal decode-only
