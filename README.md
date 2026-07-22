@@ -140,7 +140,8 @@ See [`tools/pixeldemaster/README.md`](tools/pixeldemaster/README.md).
 * **fgsfds** — [max_nx](https://github.com/fgsfdsfgs/max_nx), the loader this is based on
 * **TheOfficialFloW** — the original Vita ports that pioneered the technique
 * **NaGaa95** — [`ct_nx`](https://github.com/NaGaa95/ct_nx), the Switch port this derives from
-* **JohnnyonFlame** — gmloader-next, reference for the Linux ELF-loader + glibc TLS handling
+* **JohnnyonFlame** — [gmloader-next](https://github.com/JohnnyonFlame/gmloader-next), reference for the Linux ELF-loader + glibc TLS handling
+* the **PortMaster** community — the toolchain, builder images, and packaging conventions this port ships on
 * **Caveras** — the *ChronoType* SNES font recreation (CC BY-NC-SA; see `portmaster/pkg/ct/licenses/font-license.txt`)
 * **FFmpeg** — the [FFmpeg project](https://ffmpeg.org) (LGPL v2.1); a minimal decode-only
   build is bundled for cutscene playback (`portmaster/ffmpeg-build.sh`, license in
