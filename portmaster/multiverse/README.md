@@ -8,12 +8,13 @@ The MV repo does NOT use the `ports/<name>/` source layout. It stores, at the re
 
 | MV repo path | from here | how to produce |
 | --- | --- | --- |
-| `ct.zip` | — | `portmaster/package.sh` (built PortMaster zip) |
+| `ct.zip` | — | `portmaster/package.sh` builds `ct_pm.zip`; rename to `ct.zip` (and change the `port.json` `name` field to match) for the MV submission |
 | `markdown/ct.md` | `ct.md` | the asset-extraction guide shown to users |
 | `images/ct.screenshot.jpg` | **TODO** | a 4:3 ≥640×480 **gameplay** JPG — *not captured yet*; grab it from a 4:3 device (RG40XXV / RG35XX SP) during tomorrow's testing |
 
 Notes confirmed against real MV ports (e.g. `smworld.zip`):
-- `port.json` is `version 2`, `name "ct.zip"`, `rtr false`, `runtime null`. MV ports use
+- MV `port.json` is `version 2`, `name "ct.zip"`, `rtr false`, `runtime null` (our
+  committed one says `name "ct_pm.zip"` — the self-host zip; align at submission). MV ports use
   `image: null` (the screenshot is the repo-level `images/*.screenshot.jpg`, **not** inside
   the zip), and there is **no `gameinfo.xml` inside the zip** — PortMaster generates the
   EmulationStation metadata itself. (`gameinfo.xml` here is kept only for completeness /

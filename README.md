@@ -46,7 +46,7 @@ docker run --rm --platform=linux/arm64 \
 ```
 
 `portmaster/build.sh` compiles `source/movie_player.c` (the real FMV player) and links the
-bundled FFmpeg; the 5 `.so.*` are copied into `portmaster/pkg/ct/libs/` and found at runtime
+bundled FFmpeg; the 5 `.so.*` are copied into `portmaster/pkg/ct/libs.aarch64/` and found at runtime
 via the launcher's `LD_LIBRARY_PATH`. For a quick boot-to-title build without ffmpeg, swap
 in `portmaster/movie_stub.c`. See `portmaster/NOTES.md` for the full architecture, the FMV
 section, milestone history, and the `os_*` abstraction map.

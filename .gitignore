@@ -18,6 +18,7 @@ portmaster/_so/
 portmaster/pkg/ct/ct
 *.ppm
 frame_*
+shadercache/
 .DS_Store
 
 # bundled FFmpeg libs (build artifacts — reproduce via portmaster/ffmpeg-build.sh)

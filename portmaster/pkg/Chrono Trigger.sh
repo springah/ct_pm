@@ -1,5 +1,5 @@
 #!/bin/bash
-# PORTMASTER: ct.zip, Chrono Trigger.sh
+# PORTMASTER: ct_pm.zip, Chrono Trigger.sh
 # Chrono Trigger (Android) via the ct_nx loader. User supplies libchrono.so +
 # libc++_shared.so + assets/ from their own legally-owned APK (v2.1.5).
 

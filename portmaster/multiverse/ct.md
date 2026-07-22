@@ -73,7 +73,7 @@ data is never distributed — it comes from your own APK as above.
 # in the PortMaster aarch64 builder image:
 bash portmaster/ffmpeg-build.sh     # build the bundled decode-only FFmpeg
 bash portmaster/build.sh            # build the aarch64 `ct` binary (links FMV)
-bash portmaster/package.sh          # assemble ct.zip
+bash portmaster/package.sh          # assemble ct_pm.zip
 ```
 
 See `portmaster/NOTES.md` in the repo for the full build/recompile details.

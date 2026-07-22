@@ -156,11 +156,11 @@ builder with the ffmpeg prefix mounted at `/ff`. Then copy the 5 `.so.*` from th
 ffmpeg build into `pkg/ct/libs.aarch64/` named by soname (these are gitignored build artifacts).
 
 ### Packaging (PortMaster zip)
-`portmaster/package.sh [ct-binary]` assembles a PortMaster-installable `ct.zip` from
+`portmaster/package.sh [ct-binary]` assembles a PortMaster-installable `ct_pm.zip` from
 `pkg/` + the built `ct` (whitelist staging, so the user's commercial files and dev cruft
 can't leak). Zip extracts to `/roms/ports/`: `Chrono Trigger.sh` + `ct/{port.json, ct,
 font.ttf, screenshot.png, libs.aarch64/, licenses/}`. port.json is `version 2`, `name
-"ct.zip"`, `rtr false`, `runtime null`, `arch ["aarch64"]` (the Half-Life template — the
+"ct_pm.zip"`, `rtr false`, `runtime null`, `arch ["aarch64"]` (the Half-Life template — the
 canonical native, user-supplied-commercial-files port). This is the self-host / on-device
 zip; an OFFICIAL PortMaster submission is built by `tools/build_release.py` in a
 PortMaster-New fork from the repo-layout tree (metadata + README.md + gameinfo.xml at the
@@ -197,8 +197,9 @@ not committed (the repo ships no game art — same stance as the .so/assets): bo
 then capture an **in-game (field/battle)** frame — PortMaster requires a **4:3,
 ≥640×480 gameplay** screenshot (NOT the 16:9 title). e.g.
 `Image.open('latest.ppm').resize((640,480)).save('screenshot.png')` from a gameplay frame.
-Ships in the zip (assembled by `portmaster/package.sh`). ⚠️ the current screenshot is the
-old 16:9 640x360 title shot and must be re-captured before any official submission.
+Ships in the zip (assembled by `portmaster/package.sh`). ⚠️ no screenshot is committed
+(the path is gitignored — it comes from the user's own game via CT_CAPTURE); capture a
+4:3 ≥640×480 gameplay shot before any official submission.
 
 ## Backlog / next time (codebase-review findings, 2026-06-28)
 Health items surfaced in a code review — not blockers, "do when convenient":
