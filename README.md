@@ -61,21 +61,24 @@ section, milestone history, and the `os_*` abstraction map.
   Each code loads its own localized data; an unrecognized/unsupported value falls back to
   English.
 * `render_scale` — internal render resolution as a fraction of the panel: the engine
-  renders into a `panel × scale` FBO that is upscaled at present. Defaults to **0.75**
-  (≈960×540 on a 720p panel) to keep GPU-bound handhelds at full speed; set `1` for
-  native/off. See `source/rescale.c`.
+  renders into a `panel × scale` FBO that is upscaled at present. Defaults to **1**
+  (native — the engine's 640×360 design space maps cleanly onto 16:9 panels; 720p is
+  an exact 2×). Set `0.75` on GPU-bound devices to trade sharpness for fps. See
+  `source/rescale.c`.
 * `render_filter` — the upscale filter at present: `linear` (default, soft) or
   `nearest` (sharp). Pair `nearest` with an integer scale — e.g. `render_scale 0.5`
   on a 640×480 panel renders 320×240 and maps every internal pixel to an exact 2×2
   block: true integer scaling. Env override `CT_RENDER_FILTER`.
-* `gl_threaded` / `gl_no_error` — mesa/GLES tuning, both **on** by default: run GL
-  submission on a worker core (`mesa_glthread`) and skip mesa's per-call validation
-  (`MESA_NO_ERROR`). Set `0` if a driver misbehaves. (Known: `gl_threaded` adds
-  latency on the panfrost/Mali H700 devices — set it `0` there.)
-* `shader_cache` — **experimental, off by default**: cache the driver's compiled
-  program binaries under `shadercache/`, skipping the compile+link the engine repeats
-  on every scene change (`GL_OES_get_program_binary`; self-disables if the driver
-  lacks it). See `source/shadercache.c`. Env override `CT_SHADER_CACHE`.
+* `gl_threaded` / `gl_no_error` — mesa/GLES tuning. `gl_threaded` (mesa's
+  `mesa_glthread`) is **off** by default: it is a no-op on blob drivers (PowerVR) and
+  measurably adds latency on panfrost/Mali; set `1` only if your driver demonstrably
+  benefits. `gl_no_error` (skip mesa's per-call validation, `MESA_NO_ERROR`) stays
+  **on** by default.
+* `shader_cache` — **on** by default: cache the driver's compiled program binaries
+  under `shadercache/`, skipping the compile+link the engine repeats on every scene
+  change (`GL_OES_get_program_binary`; verified on PowerVR GE8300 + Mali-G31,
+  self-disables if the driver lacks it). See `source/shadercache.c`. Env override
+  `CT_SHADER_CACHE`.
 
 **Runtime engine patches** — **on by default** (verified on-device against the supported
 Chrono Trigger Android **v2.1.5** libchrono; each write is checked against the expected

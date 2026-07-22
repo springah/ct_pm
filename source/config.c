@@ -57,11 +57,15 @@ int read_config(const char *file) {
   config.screen_width = -1; // auto
   config.screen_height = -1;
   strlcpy(config.language, LANG_DEFAULT, sizeof(config.language));
-  config.render_scale = 0.75f; // GPU-bound handhelds: render 3/4-size, upscale
+  config.render_scale = 1.0f;  // native: the engine's 640x360 design space maps
+                               // cleanly onto 16:9 panels (720p = exact 2x); set
+                               // 0.75 on GPU-bound devices to trade sharpness for fps
   strlcpy(config.render_filter, "linear", sizeof(config.render_filter));
-  config.gl_threaded = 1;      // offload GL submission to a worker core (mesa_glthread)
+  config.gl_threaded = 0;      // mesa_glthread: no-op on blob drivers (PowerVR),
+                               // measured latency on panfrost/Mali -- off by default
   config.gl_no_error = 1;      // skip mesa's per-call GL validation (MESA_NO_ERROR)
-  config.shader_cache = 0;     // GL program binary cache (shadercache.c); experimental
+  config.shader_cache = 1;     // GL program binary cache (shadercache.c); verified
+                               // on PowerVR GE8300 + Mali-G31 (self-disables elsewhere)
   config.cursor_fix = 1;            // libchrono patch groups (patches.h); on by default (v2.1.5-verified on-device)
   config.remove_mobile_ui = 1;
   config.controller_glyphs = 1;

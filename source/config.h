@@ -40,23 +40,27 @@ typedef struct {
   int screen_height;
   char language[8];
   // Internal render scale (Linux/PortMaster; see rescale.c). The engine
-  // renders at panel*scale and is upscaled at present; 1 = native/off.
+  // renders at panel*scale and is upscaled at present; 1 (default) = native.
+  // Set 0.75 on GPU-bound devices to trade sharpness for fps.
   float render_scale;
   // Upscale filter at present: "linear" (default, soft) or "nearest" (sharp;
   // with an integer scale pair like 0.5 on a 640x480 panel every internal
   // pixel maps to an exact block -- true integer scaling).
   char render_filter[8];
-  // mesa/GLES tuning (Linux/PortMaster). Both default on; set 0 in config.txt
-  // if a driver misbehaves.
-  //   gl_threaded -- run mesa's GL submission on a worker core (mesa_glthread),
-  //                  offloading draw-submission from the single-threaded engine.
+  // mesa/GLES tuning (Linux/PortMaster).
+  //   gl_threaded -- run mesa's GL submission on a worker core (mesa_glthread).
+  //                  Default OFF: a no-op on blob drivers (PowerVR) and measured
+  //                  added latency on panfrost/Mali; set 1 only if a mesa driver
+  //                  demonstrably benefits.
   //   gl_no_error -- skip mesa's per-call GL validation (MESA_NO_ERROR); cocos's
   //                  calls are already well-formed, so this is pure CPU savings.
+  //                  Default on.
   int gl_threaded;
   int gl_no_error;
   // On-disk GL program binary cache (shadercache.c): skips the driver
-  // compile+link the engine repeats per scene. Experimental, default off;
-  // needs a driver exposing GL_OES_get_program_binary (self-disables if not).
+  // compile+link the engine repeats per scene. Default on (verified on
+  // PowerVR GE8300 + Mali-G31); self-disables when the driver lacks
+  // GL_OES_get_program_binary.
   int shader_cache;
   // Runtime libchrono patches (patches.h; each old-word verified, and only
   // applied when the v2.1.5 fingerprint matches). On by default (verified
