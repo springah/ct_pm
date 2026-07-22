@@ -42,6 +42,10 @@ typedef struct {
   // Internal render scale (Linux/PortMaster; see rescale.c). The engine
   // renders at panel*scale and is upscaled at present; 1 = native/off.
   float render_scale;
+  // Upscale filter at present: "linear" (default, soft) or "nearest" (sharp;
+  // with an integer scale pair like 0.5 on a 640x480 panel every internal
+  // pixel maps to an exact block -- true integer scaling).
+  char render_filter[8];
   // mesa/GLES tuning (Linux/PortMaster). Both default on; set 0 in config.txt
   // if a driver misbehaves.
   //   gl_threaded -- run mesa's GL submission on a worker core (mesa_glthread),

@@ -64,6 +64,10 @@ section, milestone history, and the `os_*` abstraction map.
   renders into a `panel × scale` FBO that is upscaled at present. Defaults to **0.75**
   (≈960×540 on a 720p panel) to keep GPU-bound handhelds at full speed; set `1` for
   native/off. See `source/rescale.c`.
+* `render_filter` — the upscale filter at present: `linear` (default, soft) or
+  `nearest` (sharp). Pair `nearest` with an integer scale — e.g. `render_scale 0.5`
+  on a 640×480 panel renders 320×240 and maps every internal pixel to an exact 2×2
+  block: true integer scaling. Env override `CT_RENDER_FILTER`.
 * `gl_threaded` / `gl_no_error` — mesa/GLES tuning, both **on** by default: run GL
   submission on a worker core (`mesa_glthread`) and skip mesa's per-call validation
   (`MESA_NO_ERROR`). Set `0` if a driver misbehaves. (Known: `gl_threaded` adds

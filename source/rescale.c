@@ -94,6 +94,13 @@ static float pick_scale(void) {
   return s;
 }
 
+static GLint pick_filter(void) {
+  const char *f = config.render_filter;
+  const char *env = getenv("CT_RENDER_FILTER");
+  if (env && *env) f = env;
+  return (f && !strcmp(f, "nearest")) ? GL_NEAREST : GL_LINEAR;
+}
+
 void ct_rescale_setup(int win_w, int win_h) {
   g_win_w = win_w; g_win_h = win_h;
 
@@ -113,8 +120,9 @@ void ct_rescale_setup(int win_w, int win_h) {
   glGenTextures(1, &g_color);
   glBindTexture(GL_TEXTURE_2D, g_color);
   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, iw, ih, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  const GLint filter = pick_filter();
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
