@@ -40,6 +40,22 @@ You need three things out of your own Chrono Trigger **v2.1.5** Android APK:
 | L / R | Page • Time-period cursor |
 | **Start + Select** | Quit the game |
 
+## Settings
+
+Everything works out of the box; `ports/ct/config.txt` (created on first run) has the
+knobs. The defaults: **native resolution**, a **shader cache** on (first session
+compiles and caches the GPU shaders into `shadercache/` — scene changes get smoother
+once it's warm), and the mobile touch overlays replaced with proper controller UI.
+
+- The game looks its best on **16:9 panels, ideally 720p** — an exact 2× of the
+  engine's internal layout. 4:3 devices are fully playable; their slightly uneven
+  pixel scaling is the engine's own doing.
+- Heavy scenes dipping on a weaker GPU? Set `render_scale 0.75` (renders smaller
+  internally, upscales — trades a little sharpness for speed).
+- `language` — auto-detects; set `en fr de it es ja ko zh zh-Hant` to pin one.
+- `key_zl` / `key_zr` / `key_start` / `key_select` remap the extra buttons
+  (`a b x y l r zl zr start select menu none`).
+
 ## Thanks
 
 - **Square Enix** — for *Chrono Trigger*, one of the greatest RPGs ever made.
