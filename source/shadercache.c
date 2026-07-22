@@ -63,6 +63,7 @@ typedef struct {
   unsigned len;
   int deferred; // engine asked for a compile we have not issued yet
   int compiled; // the real glCompileShader has been issued
+  unsigned serial; // distinguishes reuses of the same GL id (see ProgRec)
 } ShaderRec;
 
 typedef struct {
@@ -73,6 +74,8 @@ typedef struct {
 typedef struct {
   GLuint id; // 0 = free slot
   GLuint vs, fs;
+  unsigned vs_serial, fs_serial; // must match the ShaderRec's, or the GL id
+                                 // was recycled and the record is a stranger
   AttribBind attribs[SC_MAX_ATTRIBS];
   int nattribs;
   unsigned long long last_key; // survives the engine deleting the shaders
@@ -122,11 +125,13 @@ static ShaderRec *sh_find(GLuint id) {
 }
 
 static ShaderRec *sh_alloc(GLuint id) {
+  static unsigned serial;
   ShaderRec *s = sh_find(id);
   if (s) return s;
   for (int i = 0; i < SC_MAX_SHADERS; i++) {
     if (g_shaders[i].id == 0) {
       g_shaders[i].id = id;
+      g_shaders[i].serial = ++serial;
       return &g_shaders[i];
     }
   }
@@ -187,10 +192,20 @@ static void sc_init(void) {
   fprintf(stderr, "shadercache: enabled (%d formats, %s)\n", (int)nformats, renderer);
 }
 
+// A ShaderRec only speaks for a ProgRec's attachment if the serial recorded at
+// glAttachShader still matches -- otherwise the engine deleted that shader and
+// the driver recycled its id onto a different one (a stranger with different
+// sources, which would silently mis-key the program).
+static ShaderRec *attached_shader(GLuint id, unsigned serial) {
+  ShaderRec *s = sh_find(id);
+  return (s && s->serial == serial) ? s : NULL;
+}
+
 static void compile_attached(ProgRec *pr) {
-  GLuint ids[2] = { pr->vs, pr->fs };
+  ShaderRec *recs[2] = { attached_shader(pr->vs, pr->vs_serial),
+                         attached_shader(pr->fs, pr->fs_serial) };
   for (int i = 0; i < 2; i++) {
-    ShaderRec *s = sh_find(ids[i]);
+    ShaderRec *s = recs[i];
     if (s && s->deferred && !s->compiled) {
       glCompileShader(s->id);
       s->compiled = 1;
@@ -202,11 +217,12 @@ static void compile_attached(ProgRec *pr) {
 static unsigned long long prog_key(ProgRec *pr) {
   unsigned long long h = FNV_SEED;
   GLuint ids[2] = { pr->vs, pr->fs };
+  unsigned serials[2] = { pr->vs_serial, pr->fs_serial };
   int have = 0;
   for (int i = 0; i < 2; i++) {
     if (!ids[i]) continue;
-    ShaderRec *s = sh_find(ids[i]);
-    if (!s || !s->src) return 0; // unrecorded source: cannot key this program
+    ShaderRec *s = attached_shader(ids[i], serials[i]);
+    if (!s || !s->src) return 0; // unrecorded or recycled id: cannot key this
     h = fnv1a(h, "|", 1);
     h = fnv1a(h, s->src, s->len);
     have = 1;
@@ -351,12 +367,28 @@ void ct_sc_glGetShaderInfoLog(GLuint shader, GLsizei bufSize, GLsizei *length,
 void ct_sc_glAttachShader(GLuint program, GLuint shader) {
   glAttachShader(program, shader);
   if (!sc_wanted() || g_state < 0) return;
+  ShaderRec *s = sh_find(shader);
   ProgRec *pr = prog_alloc(program);
-  if (!pr) return;
+  if (!pr) {
+    // Untracked program: no record will drive the late compile at link, so a
+    // deferred compile would be orphaned (link on a never-compiled shader).
+    // Issue it now instead.
+    if (s && s->deferred && !s->compiled) {
+      glCompileShader(s->id);
+      s->compiled = 1;
+      s->deferred = 0;
+    }
+    return;
+  }
   GLint type = 0;
   glGetShaderiv(shader, GL_SHADER_TYPE, &type);
-  if (type == GL_VERTEX_SHADER) pr->vs = shader;
-  else if (type == GL_FRAGMENT_SHADER) pr->fs = shader;
+  if (type == GL_VERTEX_SHADER) {
+    pr->vs = shader;
+    pr->vs_serial = s ? s->serial : 0;
+  } else if (type == GL_FRAGMENT_SHADER) {
+    pr->fs = shader;
+    pr->fs_serial = s ? s->serial : 0;
+  }
 }
 
 void ct_sc_glDetachShader(GLuint program, GLuint shader) {
