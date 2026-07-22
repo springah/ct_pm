@@ -16,8 +16,8 @@ port). The codebase is **dual-target**: the OS layer is behind `#ifdef __SWITCH_
 same `source/` builds for both Switch (libnx) and Linux (SDL2/POSIX, in `portmaster/`).
 
 > Status: **playable** — boots, renders on the GPU, plays and saves. Verified on a
-> **TrimUI Smart Pro** (Allwinner A133 / Mali-G31), **Anbernic RG40XX-V** and
-> **RG35XX-SP** (Allwinner H700), all on Knulli. See `portmaster/NOTES.md`.
+> **TrimUI Smart Pro** (Allwinner A133 / PowerVR GE8300), **Anbernic RG40XX-V** and
+> **RG35XX-SP** (Allwinner H700 / Mali-G31), all on Knulli. See `portmaster/NOTES.md`.
 
 ## You supply the game
 
@@ -50,6 +50,29 @@ bundled FFmpeg; the 5 `.so.*` are copied into `portmaster/pkg/ct/libs/` and foun
 via the launcher's `LD_LIBRARY_PATH`. For a quick boot-to-title build without ffmpeg, swap
 in `portmaster/movie_stub.c`. See `portmaster/NOTES.md` for the full architecture, the FMV
 section, milestone history, and the `os_*` abstraction map.
+
+## Displays: what to expect
+
+The engine lays the game out in a **640×360 (16:9) design space** and scales it to
+whatever panel it is told:
+
+* **16:9 panels are its home turf, and 720p is ideal** — 1280×720 is an exact **2×**
+  of the design space, so sprites and UI land on clean pixel boundaries. On a
+  720p-class device the defaults (native resolution + shader cache) give the best
+  look and feel this port can produce.
+* **4:3 and other aspects work**, but are off-design: the engine's adaptive camera
+  reframes vertically and draws the art at a fractional zoom (~2.1–2.5× at 640×480),
+  so sprite pixels come out slightly uneven. That is the engine's own scaling, not
+  the port's — `render_scale`/`render_filter` cannot fix it, only soften (`0.75` +
+  `linear`) or expose (`1`) it.
+* **Don't chase integer scaling on 480p panels** with `render_scale 0.5` +
+  `render_filter nearest`: the engine scales its UI text down along with the art,
+  and at 320×240 internal the text is unreadable.
+
+The first session compiles and caches the GPU shader programs (`shadercache/` in the
+port directory — safe to delete; it is rebuilt on demand). Scene changes get
+noticeably smoother once it is warm. If heavy scenes still dip on a weak GPU,
+`render_scale 0.75` is the one real lever.
 
 ## Configuration
 
@@ -96,11 +119,11 @@ instruction, so a different build safely skips them). Set `0` to disable any one
 * `right_stick_mirror` — `1` (default) = the right stick also drives movement when the
   left stick is centred; `0` = left stick only.
 
-Launcher env overrides: `CT_FONT_SCALE` (UI font size, default `1.5`), `CT_RENDER_SCALE`
-(overrides `render_scale`), and `CT_TEXT_SHADOW` (`off` / `auto` / `dx,dy,opacity` — the
-SNES-style 1px drop-shadow is baked in otherwise). The launcher also adds a temporary
-zram swap and eases the CPU governor for the session (`CT_GOV` / `CT_MIN_KHZ`), restoring
-both on exit.
+Launcher env overrides: `CT_FONT_SCALE` (UI font size, default `1.5`), `CT_RENDER_SCALE` /
+`CT_RENDER_FILTER` / `CT_SHADER_CACHE` (override their config keys), and `CT_TEXT_SHADOW`
+(`off` / `auto` / `dx,dy,opacity` — the SNES-style 1px drop-shadow is baked in otherwise).
+The launcher also adds a temporary zram swap and eases the CPU governor for the session
+(`CT_GOV` / `CT_MIN_KHZ`), restoring both on exit.
 
 ## Pixel-art mods (optional)
 
