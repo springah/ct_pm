@@ -26,8 +26,8 @@ CF="-O3 -g -mcpu=cortex-a53 -Iportmaster -Isource \
 SRC="portmaster/os_linux.c portmaster/compat_libc.c portmaster/osk.c portmaster/crash.c \
      source/asset.c source/config.c source/error.c source/gfx.c source/imports.c \
      source/jni_fake.c source/libc_shim.c source/main.c source/movelog.c \
-     source/opensles.c source/prefs.c source/rescale.c source/so_util.c \
-     source/util.c source/movie_player.c"
+     source/opensles.c source/prefs.c source/rescale.c source/shadercache.c \
+     source/so_util.c source/util.c source/movie_player.c"
 
 LIBS="$(sdl2-config --libs) $(pkg-config --libs freetype2) \
       -L$FFPREFIX/lib -lavformat -lavcodec -lswscale -lswresample -lavutil \

@@ -50,6 +50,10 @@ typedef struct {
   //                  calls are already well-formed, so this is pure CPU savings.
   int gl_threaded;
   int gl_no_error;
+  // On-disk GL program binary cache (shadercache.c): skips the driver
+  // compile+link the engine repeats per scene. Experimental, default off;
+  // needs a driver exposing GL_OES_get_program_binary (self-disables if not).
+  int shader_cache;
   // Runtime libchrono patches (patches.h; each old-word verified, and only
   // applied when the v2.1.5 fingerprint matches). On by default (verified
   // on-device against v2.1.5); set 0 in config.txt to disable any one.

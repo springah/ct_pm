@@ -66,7 +66,12 @@ section, milestone history, and the `os_*` abstraction map.
   native/off. See `source/rescale.c`.
 * `gl_threaded` / `gl_no_error` — mesa/GLES tuning, both **on** by default: run GL
   submission on a worker core (`mesa_glthread`) and skip mesa's per-call validation
-  (`MESA_NO_ERROR`). Set `0` if a driver misbehaves.
+  (`MESA_NO_ERROR`). Set `0` if a driver misbehaves. (Known: `gl_threaded` adds
+  latency on the panfrost/Mali H700 devices — set it `0` there.)
+* `shader_cache` — **experimental, off by default**: cache the driver's compiled
+  program binaries under `shadercache/`, skipping the compile+link the engine repeats
+  on every scene change (`GL_OES_get_program_binary`; self-disables if the driver
+  lacks it). See `source/shadercache.c`. Env override `CT_SHADER_CACHE`.
 
 **Runtime engine patches** — **on by default** (verified on-device against the supported
 Chrono Trigger Android **v2.1.5** libchrono; each write is checked against the expected

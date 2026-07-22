@@ -47,6 +47,7 @@
 #include "opensles.h"
 #include "asset.h"
 #include "rescale.h"
+#include "shadercache.h"
 #include "imports.h"
 
 // ---------------------------------------------------------------------------
@@ -239,9 +240,27 @@ static int clock_gettime_fake(int clk, struct timespec *tp) {
 static void glBindFramebuffer_scaled(GLenum target, GLuint fb) {
   glBindFramebuffer(target, ct_rescale_redirect_fb(fb));
 }
+// Shader-cache interpose (shadercache.c): same rule as the rescale redirect --
+// a probed pointer must resolve to the wrapper on every path or it would
+// bypass the cache bookkeeping mid-stream.
+static const struct { const char *name; void *fn; } gl_wrapped[] = {
+  { "glBindFramebuffer", (void *)&glBindFramebuffer_scaled },
+  { "glShaderSource", (void *)&ct_sc_glShaderSource },
+  { "glCompileShader", (void *)&ct_sc_glCompileShader },
+  { "glGetShaderiv", (void *)&ct_sc_glGetShaderiv },
+  { "glGetShaderInfoLog", (void *)&ct_sc_glGetShaderInfoLog },
+  { "glAttachShader", (void *)&ct_sc_glAttachShader },
+  { "glDetachShader", (void *)&ct_sc_glDetachShader },
+  { "glBindAttribLocation", (void *)&ct_sc_glBindAttribLocation },
+  { "glLinkProgram", (void *)&ct_sc_glLinkProgram },
+  { "glDeleteShader", (void *)&ct_sc_glDeleteShader },
+  { "glDeleteProgram", (void *)&ct_sc_glDeleteProgram },
+};
 static void *eglGetProcAddress_scaled(const char *name) {
-  if (name && !strcmp(name, "glBindFramebuffer"))
-    return (void *)&glBindFramebuffer_scaled;
+  if (name)
+    for (size_t i = 0; i < sizeof(gl_wrapped) / sizeof(*gl_wrapped); i++)
+      if (!strcmp(name, gl_wrapped[i].name))
+        return gl_wrapped[i].fn;
   return (void *)eglGetProcAddress(name);
 }
 
@@ -762,8 +781,8 @@ DynLibFunction dynlib_functions[] = {
 
   // GLES2 fixed entry points (mesa libGLESv2)
   { "glActiveTexture", (uintptr_t)&glActiveTexture },
-  { "glAttachShader", (uintptr_t)&glAttachShader },
-  { "glBindAttribLocation", (uintptr_t)&glBindAttribLocation },
+  { "glAttachShader", (uintptr_t)&ct_sc_glAttachShader },
+  { "glBindAttribLocation", (uintptr_t)&ct_sc_glBindAttribLocation },
   { "glBindBuffer", (uintptr_t)&glBindBuffer },
   { "glBindFramebuffer", (uintptr_t)&glBindFramebuffer_scaled },
   { "glBindRenderbuffer", (uintptr_t)&glBindRenderbuffer },
@@ -781,7 +800,7 @@ DynLibFunction dynlib_functions[] = {
   { "glClearDepthf", (uintptr_t)&glClearDepthf },
   { "glClearStencil", (uintptr_t)&glClearStencil },
   { "glColorMask", (uintptr_t)&glColorMask },
-  { "glCompileShader", (uintptr_t)&glCompileShader },
+  { "glCompileShader", (uintptr_t)&ct_sc_glCompileShader },
   { "glCompressedTexImage2D", (uintptr_t)&glCompressedTexImage2D },
   { "glCompressedTexSubImage2D", (uintptr_t)&glCompressedTexSubImage2D },
   { "glCreateProgram", (uintptr_t)&glCreateProgram },
@@ -789,14 +808,14 @@ DynLibFunction dynlib_functions[] = {
   { "glCullFace", (uintptr_t)&glCullFace },
   { "glDeleteBuffers", (uintptr_t)&glDeleteBuffers },
   { "glDeleteFramebuffers", (uintptr_t)&glDeleteFramebuffers },
-  { "glDeleteProgram", (uintptr_t)&glDeleteProgram },
+  { "glDeleteProgram", (uintptr_t)&ct_sc_glDeleteProgram },
   { "glDeleteRenderbuffers", (uintptr_t)&glDeleteRenderbuffers },
-  { "glDeleteShader", (uintptr_t)&glDeleteShader },
+  { "glDeleteShader", (uintptr_t)&ct_sc_glDeleteShader },
   { "glDeleteTextures", (uintptr_t)&glDeleteTextures },
   { "glDepthFunc", (uintptr_t)&glDepthFunc },
   { "glDepthMask", (uintptr_t)&glDepthMask },
   { "glDepthRangef", (uintptr_t)&glDepthRangef },
-  { "glDetachShader", (uintptr_t)&glDetachShader },
+  { "glDetachShader", (uintptr_t)&ct_sc_glDetachShader },
   { "glDisable", (uintptr_t)&glDisable },
   { "glDisableVertexAttribArray", (uintptr_t)&glDisableVertexAttribArray },
   { "glDrawArrays", (uintptr_t)&glDrawArrays },
@@ -822,9 +841,9 @@ DynLibFunction dynlib_functions[] = {
   { "glGetIntegerv", (uintptr_t)&glGetIntegerv },
   { "glGetProgramInfoLog", (uintptr_t)&glGetProgramInfoLog },
   { "glGetProgramiv", (uintptr_t)&glGetProgramiv },
-  { "glGetShaderInfoLog", (uintptr_t)&glGetShaderInfoLog },
+  { "glGetShaderInfoLog", (uintptr_t)&ct_sc_glGetShaderInfoLog },
   { "glGetShaderSource", (uintptr_t)&glGetShaderSource },
-  { "glGetShaderiv", (uintptr_t)&glGetShaderiv },
+  { "glGetShaderiv", (uintptr_t)&ct_sc_glGetShaderiv },
   { "glGetString", (uintptr_t)&glGetString },
   { "glGetUniformLocation", (uintptr_t)&glGetUniformLocation },
   { "glHint", (uintptr_t)&glHint },
@@ -832,7 +851,7 @@ DynLibFunction dynlib_functions[] = {
   { "glIsEnabled", (uintptr_t)&glIsEnabled },
   { "glIsRenderbuffer", (uintptr_t)&glIsRenderbuffer },
   { "glLineWidth", (uintptr_t)&glLineWidth },
-  { "glLinkProgram", (uintptr_t)&glLinkProgram },
+  { "glLinkProgram", (uintptr_t)&ct_sc_glLinkProgram },
   { "glMapBufferOES", (uintptr_t)&gl_MapBufferOES },
   { "glUnmapBufferOES", (uintptr_t)&gl_UnmapBufferOES },
   { "glPixelStorei", (uintptr_t)&glPixelStorei },
@@ -840,7 +859,7 @@ DynLibFunction dynlib_functions[] = {
   { "glReadPixels", (uintptr_t)&glReadPixels },
   { "glRenderbufferStorage", (uintptr_t)&glRenderbufferStorage },
   { "glScissor", (uintptr_t)&glScissor },
-  { "glShaderSource", (uintptr_t)&glShaderSource },
+  { "glShaderSource", (uintptr_t)&ct_sc_glShaderSource },
   { "glStencilFunc", (uintptr_t)&glStencilFunc },
   { "glStencilFuncSeparate", (uintptr_t)&glStencilFuncSeparate },
   { "glStencilMask", (uintptr_t)&glStencilMask },
