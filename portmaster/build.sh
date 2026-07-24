@@ -3,11 +3,11 @@
 # aarch64 builder image (glibc 2.31). Run from the repo root, e.g.:
 #
 #   docker run --rm --platform=linux/arm64 \
-#     -v "$PWD":/workspace -v "$HOME/Desktop/ct_switch_build/ffmpeg-aarch64":/ff \
+#     -v "$PWD":/workspace -v "$HOME/.ctbuild/ffmpeg-aarch64":/ff \
 #     -w /workspace IMG bash portmaster/build.sh
 #
-# FFPREFIX must point at a decode-only FFmpeg 7.x build (see
-# ../ct_switch_build/ffmpeg-src/build_ffmpeg.sh). The real FMV player
+# FFPREFIX must point at a decode-only FFmpeg 7.x build (build it with
+# portmaster/ffmpeg-build.sh). The real FMV player
 # (source/movie_player.c) is compiled in; portmaster/movie_stub.c is only used
 # for quick boot-to-title builds without ffmpeg.
 set -e
