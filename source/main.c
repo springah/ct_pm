@@ -24,6 +24,7 @@
 #include <SDL2/SDL.h>
 
 #include "config.h"
+#include "version.h"
 #include "util.h"
 #include "error.h"
 #include "so_util.h"
@@ -611,6 +612,9 @@ void input_consume_held(void) {
 
 int main(void) {
 #ifndef __SWITCH__
+  // First line of log.txt: a bug report is only actionable if it says which
+  // build produced it.
+  fprintf(stderr, "ct: %s (built %s)\n", CT_VERSION, __DATE__);
   ct_install_crash_handler();
   // PortMaster launches from $GAMEDIR; make data paths (so/assets/config) relative.
   if (chdir(os_data_dir()) != 0) { /* check_data() will report if files are missing */ }

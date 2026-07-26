@@ -1,5 +1,4 @@
 #!/bin/bash
-# PORTMASTER: ct_pm.zip, Chrono Trigger.sh
 # Chrono Trigger (Android) via the ct_nx loader. User supplies libchrono.so +
 # libc++_shared.so + assets/ from their own legally-owned APK (v2.1.5).
 
@@ -28,24 +27,36 @@ get_controls
 GAMEDIR="/$directory/ports/ct"
 cd "$GAMEDIR" || exit 1
 
+# Older framework versions don't export DEVICE_ARCH; without it LD_LIBRARY_PATH
+# below points nowhere and the bundled FFmpeg can't be found, which is the one
+# failure here that is total rather than graceful.
+DEVICE_ARCH="${DEVICE_ARCH:-aarch64}"
+
+# Report a fatal problem where the player can actually see it. The frontend
+# captures this script's stdout into a pipe, so a plain echo shows up nowhere on
+# the device -- the framework dialog is the only thing that reaches the screen.
+ct_error() {
+  if command -v pm_show_error >/dev/null 2>&1; then
+    pm_show_error "$1"
+  else
+    clear; echo "$1"; sleep 15
+  fi
+}
+
 # --- first-run: require the user-supplied game files ---------------------------
 missing=""
 [ -f "$GAMEDIR/libchrono.so" ]            || missing="$missing libchrono.so"
 [ -f "$GAMEDIR/libc++_shared.so" ]        || missing="$missing libc++_shared.so"
 [ -f "$GAMEDIR/assets/resources.bin" ]    || missing="$missing assets/"
 if [ -n "$missing" ]; then
-  clear
-  echo ""
-  echo "  Chrono Trigger - missing game files:$missing"
-  echo ""
-  echo "  Copy these from your own Chrono Trigger Android APK (v2.1.5) into:"
-  echo "    $GAMEDIR/"
-  echo "    - lib/arm64-v8a/libchrono.so      -> libchrono.so"
-  echo "    - lib/arm64-v8a/libc++_shared.so  -> libc++_shared.so"
-  echo "    - the whole assets/ folder        -> assets/"
-  echo ""
-  echo "  (closing in 15s)"
-  sleep 15
+  ct_error "Chrono Trigger is missing game files:$missing
+
+Copy these from your own Chrono Trigger Android APK (v2.1.5) into
+$GAMEDIR/
+
+  lib/arm64-v8a/libchrono.so     -> libchrono.so
+  lib/arm64-v8a/libc++_shared.so -> libc++_shared.so
+  the whole assets/ folder       -> assets/"
   exit 1
 fi
 
@@ -111,6 +122,7 @@ fi
 
 pm_platform_helper "$GAMEDIR/ct"
 ./ct > "$GAMEDIR/log.txt" 2>&1
+ct_status=$?
 
 if [ -n "$SAVED_GOV" ]; then
   for p in /sys/devices/system/cpu/cpu*/cpufreq; do
@@ -122,6 +134,19 @@ fi
 if [ -n "$ZRAM_DEV" ]; then
   $ESUDO swapoff "/dev/zram${ZRAM_DEV}" >/dev/null 2>&1
   echo "$ZRAM_DEV" | $ESUDO tee /sys/class/zram-control/hot_remove >/dev/null 2>&1
+fi
+
+# A clean quit (Start+Select, or the hardware menu button) exits 0. Anything else
+# means the game died, and without this the frontend just returns to the menu with
+# no explanation.
+if [ "$ct_status" -ne 0 ]; then
+  ct_error "Chrono Trigger exited unexpectedly (code $ct_status).
+
+Details were written to:
+  $GAMEDIR/log.txt
+
+That file is overwritten on each launch, so copy it before relaunching if you
+want to report the problem."
 fi
 
 printf "\033[H\033[2J"

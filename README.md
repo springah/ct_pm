@@ -7,7 +7,7 @@
 
 A loader/port of the Android version of *Chrono Trigger*
 (`com.square_enix.android_googleplay.chrono`, v2.1.5) for **PortMaster** handhelds
-(aarch64 Linux: muOS / Knulli / ArkOS / ROCKNIX / AmberELEC …). It maps the original
+(aarch64 Linux). It maps the original
 Android `arm64-v8a` `.so` files, shims their imports to native libraries, and runs the
 game in a minimal emulated-Android environment via **SDL2 + GLES2**.
 
@@ -17,17 +17,45 @@ same `source/` builds for both Switch (libnx) and Linux (SDL2/POSIX, in `portmas
 
 > Status: **playable** — boots, renders on the GPU, plays and saves. Verified on a
 > **TrimUI Smart Pro** (Allwinner A133 / PowerVR GE8300), **Anbernic RG40XX-V** and
-> **RG35XX-SP** (Allwinner H700 / Mali-G31), all on Knulli. See `portmaster/NOTES.md`.
+> **RG35XX-SP** (Allwinner H700 / Mali-G31). **All testing to date has been on Knulli**;
+> other PortMaster CFWs (muOS, ArkOS, ROCKNIX, AmberELEC) are expected to work but are
+> untested. See `portmaster/NOTES.md`.
+
+## Install
+
+1. Download `ct.zip` from [Releases](https://github.com/springah/ct_pm/releases). It
+   contains the port only — no game data.
+2. Extract it into your device's ports folder, so you end up with
+   `.../ports/Chrono Trigger.sh` and `.../ports/ct/`. (PortMaster's own
+   *Install from zip* option does the same thing.)
+3. Add the game files from your own APK — see below. Without them the port shows a
+   message telling you what is missing and exits.
+4. Launch **Chrono Trigger** from the Ports menu.
+
+## Controls
+
+| | |
+| --- | --- |
+| D-pad / left stick | Move (right stick also works) |
+| A | Confirm · B | Cancel / dash |
+| X / Y | Menu shortcuts |
+| L / R | Page / cycle |
+| **Start + Select** | **Quit the game** |
+
+**There is no in-game exit** — use **Start + Select** (the hardware **MENU** button plus
+Start also works). Powering the device off mid-game instead risks losing your save.
 
 ## You supply the game
 
-No game assets or original code are included. From your own legally-owned APK (v2.1.5):
+No game assets or original code are included. An APK is just a ZIP — rename it to `.zip`
+and open it. From your own legally-owned APK (v2.1.5) you need:
 * `lib/arm64-v8a/libchrono.so` — the engine
 * `lib/arm64-v8a/libc++_shared.so` — its C++ runtime
 * the entire `assets/` folder (`resources.bin`, `001.dat`…`008.dat`, `007-en.dat`,
   `Shaders/`, `build_date.txt`)
 
 Place them in the port's game directory (`.../ports/ct/`) alongside the `ct` binary.
+`portmaster/multiverse/ct.md` has the step-by-step extraction walkthrough.
 
 ## Build (PortMaster / aarch64 Linux)
 

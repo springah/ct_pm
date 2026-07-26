@@ -10,9 +10,11 @@
  * to the offline Python patcher scripts, but driven by config.txt so individual
  * fixes can be toggled without re-patching the .so on disk.
  *
- * Every entry records the expected old word, so we verify the .so matches the
- * expected build before writing anything: a mismatch prints a warning and skips
- * that entry -- it never silently corrupts. The whole pass is additionally
+ * Every entry that targets existing code records its expected old word, so we
+ * verify the .so matches the expected build before writing anything: a mismatch
+ * prints a warning to stderr (and so to log.txt) and skips that entry -- it never
+ * silently corrupts. The only entries without an old word are P_CAVE slots, whose
+ * destinations are confirmed zero-filled padding. The whole pass is additionally
  * gated on the v2.1.5 fingerprint check in main.c (g_libchrono_v215).
  *
  * Copyright (C) 2026 ppkantorski <https://github.com/ppkantorski>
@@ -26,6 +28,7 @@
 #define __PATCHES_H__
 
 #include <stdint.h>
+#include <stdio.h>
 #include "so_util.h"
 #include "util.h"
 
@@ -66,7 +69,7 @@ static uintptr_t patch_addr(so_module *mod, const PatchEntry *p) {
       if (__builtin_strcmp(name, p->sym_name) == 0)
         return (uintptr_t)mod->load_base + mod->syms[i].st_value + p->func_off;
     }
-    debugPrintf("patches: symbol not found: %s\n", p->sym_name);
+    fprintf(stderr, "ct: patches: symbol not found: %s -- skipping\n", p->sym_name);
     return 0;
   } else {
     // Raw vaddr: load_base + raw_vaddr (load_base == load_virtbase on Linux, and
@@ -88,11 +91,15 @@ static void apply_patch(so_module *mod, const PatchEntry *p) {
     return;
   }
   if (p->old_word && cur != p->old_word) {
-    debugPrintf("patches: MISMATCH @ %s+0x%x / vaddr 0x%x: "
-                "expected %08x got %08x -- skipping (%s)\n",
-                p->sym_name ? p->sym_name : "(raw)",
-                p->sym_name ? p->func_off : p->raw_vaddr,
-                p->raw_vaddr, p->old_word, cur, p->desc);
+    // stderr, not debugPrintf: debugPrintf compiles to nothing in release
+    // (DEBUG_LOG 0), and a skipped patch is exactly the thing a bug report
+    // needs to show. The launcher redirects stderr into log.txt.
+    fprintf(stderr,
+            "ct: patches: MISMATCH @ %s+0x%x / vaddr 0x%x: "
+            "expected %08x got %08x -- skipping (%s)\n",
+            p->sym_name ? p->sym_name : "(raw)",
+            p->sym_name ? p->func_off : p->raw_vaddr,
+            p->raw_vaddr, p->old_word, cur, p->desc);
     return;
   }
 
@@ -121,7 +128,10 @@ static void apply_patches(so_module *mod, const PatchEntry *table, int count) {
 #define P_RAW(vaddr, old, new, desc) \
   { NULL, 0, (uint32_t)(vaddr), (uint32_t)(old), (uint32_t)(new), (desc) }
 
-// Cave slot: zero-initialised padding, no old-word check needed.
+// Cave slot: for a destination that is genuinely zero-filled padding in the .so,
+// where there is no meaningful old word to check. Only use this after confirming
+// the target range really does read as zeros -- dead *code* is not padding, and
+// belongs in P_RAW with its real old word (see the UserScroll cave).
 #define P_CAVE(vaddr, new, desc) \
   { NULL, 0, (uint32_t)(vaddr), 0, (uint32_t)(new), (desc) }
 
@@ -757,18 +767,22 @@ static const PatchEntry g_diagonal_patches[] = {
   P_RAW(0x5a15c8, 0x3500018c, 0x14000001,
     "UserScroll diagonal block w8=8: skip float normalize, use raw-int accumulate"),
 
-  // Cave @ 0x5a15cc (40 bytes of now-dead code after the 4 redirects above;
-  // verified empty/unreachable -- nothing else in the function branches here).
-  P_CAVE(0x5a15cc, 0x29522d0a, "cave: ldp w10,w11,[x8,#0x90]   ; w10,w11 = raw per-axis step just stored (same magnitude cardinal uses)"),
-  P_CAVE(0x5a15d0, 0xb940990c, "cave: ldr w12,[x8,#0x98]       ; w12 = current X target"),
-  P_CAVE(0x5a15d4, 0xb0a018c, "cave: add w12,w12,w10          ; X target += raw X step (no normalization, no truncation loss)"),
-  P_CAVE(0x5a15d8, 0xb900990c, "cave: str w12,[x8,#0x98]"),
-  P_CAVE(0x5a15dc, 0xb900a10c, "cave: str w12,[x8,#0xa0]       ; commit X (matches cardinal's commit site)"),
-  P_CAVE(0x5a15e0, 0xb940a509, "cave: ldr w9,[x8,#0xa4]        ; w9 = current Y target"),
-  P_CAVE(0x5a15e4, 0xb0b0129, "cave: add w9,w9,w11            ; Y target += raw Y step"),
-  P_CAVE(0x5a15e8, 0xb900a509, "cave: str w9,[x8,#0xa4]"),
-  P_CAVE(0x5a15ec, 0xb900ad09, "cave: str w9,[x8,#0xac]        ; commit Y (matches cardinal's commit site)"),
-  P_CAVE(0x5a15f0, 0x14000036, "cave: b 0x5a16c8 (UserScroll epilogue, restores x19/x29/x30 and returns)"),
+  // Cave @ 0x5a15cc (40 bytes made unreachable by the 4 redirects above --
+  // nothing else in the function branches here). NOTE: this is dead *code*, not
+  // padding, so every slot carries its real old word like any other patch. The
+  // old words below are the v2.1.5 instructions that occupied the region (the
+  // 0x5a15d0/0x5a15d4 pair is the movz/movk that built the 0x3fb1eb85 (1.39f)
+  // diagonal divisor these patches exist to remove).
+  P_RAW(0x5a15cc, 0x1e220120, 0x29522d0a, "cave: ldp w10,w11,[x8,#0x90]   ; w10,w11 = raw per-axis step just stored (same magnitude cardinal uses)"),
+  P_RAW(0x5a15d0, 0x529d70a9, 0xb940990c, "cave: ldr w12,[x8,#0x98]       ; w12 = current X target"),
+  P_RAW(0x5a15d4, 0x72a7f629, 0xb0a018c,  "cave: add w12,w12,w10          ; X target += raw X step (no normalization, no truncation loss)"),
+  P_RAW(0x5a15d8, 0x1e270121, 0xb900990c, "cave: str w12,[x8,#0x98]"),
+  P_RAW(0x5a15dc, 0x1e211800, 0xb900a10c, "cave: str w12,[x8,#0xa0]       ; commit X (matches cardinal's commit site)"),
+  P_RAW(0x5a15e0, 0x14000008, 0xb940a509, "cave: ldr w9,[x8,#0xa4]        ; w9 = current Y target"),
+  P_RAW(0x5a15e4, 0x1e341000, 0xb0b0129,  "cave: add w9,w9,w11            ; Y target += raw Y step"),
+  P_RAW(0x5a15e8, 0x1e361001, 0xb900a509, "cave: str w9,[x8,#0xa4]"),
+  P_RAW(0x5a15ec, 0x7100017f, 0xb900ad09, "cave: str w9,[x8,#0xac]        ; commit Y (matches cardinal's commit site)"),
+  P_RAW(0x5a15f0, 0x1e201c20, 0x14000036, "cave: b 0x5a16c8 (UserScroll epilogue, restores x19/x29/x30 and returns)"),
 };
 
 // ---------------------------------------------------------------------------

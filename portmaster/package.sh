@@ -17,14 +17,14 @@
 #
 # Usage:  portmaster/package.sh [path-to-ct-binary]
 #   default binary: ./ct (repo root, where portmaster/build.sh writes it)
-#   override out dir/name with OUT=/path/ct_pm.zip
+#   override out dir/name with OUT=/path/ct.zip
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "$HERE/.." && pwd)"
 PKG="$HERE/pkg"
 CT_BIN="${1:-$REPO/ct}"
-OUT="${OUT:-$REPO/ct_pm.zip}"
+OUT="${OUT:-$REPO/ct.zip}"
 
 die() { echo "!! $*" >&2; exit 1; }
 
@@ -35,6 +35,10 @@ die() { echo "!! $*" >&2; exit 1; }
 [ -d "$PKG/ct/libs.aarch64" ]                 || die "missing pkg/ct/libs.aarch64 (run ffmpeg-build.sh + copy the .so in)"
 ls "$PKG/ct/libs.aarch64"/lib*.so* >/dev/null 2>&1 || die "no FFmpeg .so in pkg/ct/libs.aarch64"
 [ -d "$PKG/ct/licenses" ]                     || die "missing pkg/ct/licenses"
+# Declared by port.json and gameinfo.xml, so shipping without them leaves the port
+# pointing at files that aren't there. Fail here rather than quietly omitting them.
+[ -f "$PKG/ct/screenshot.png" ]               || die "missing pkg/ct/screenshot.png (capture one with CT_CAPTURE=1)"
+[ -f "$PKG/gameinfo.xml" ]                    || die "missing pkg/gameinfo.xml"
 
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
@@ -47,12 +51,13 @@ cp "$CT_BIN"                         "$STAGE/ct/ct"
 cp "$PKG/ct/font.ttf"                "$STAGE/ct/font.ttf"
 cp "$PKG/ct/libs.aarch64/"lib*.so*   "$STAGE/ct/libs.aarch64/"
 cp "$PKG/ct/licenses/"*              "$STAGE/ct/licenses/"
-[ -f "$PKG/ct/screenshot.png" ] && cp "$PKG/ct/screenshot.png" "$STAGE/ct/screenshot.png"
+cp "$PKG/ct/screenshot.png"          "$STAGE/ct/screenshot.png"
+cp "$PKG/gameinfo.xml"               "$STAGE/gameinfo.xml"
 chmod +x "$STAGE/ct/ct" "$STAGE/Chrono Trigger.sh"
 
 # --- zip ----------------------------------------------------------------------
 rm -f "$OUT"
-( cd "$STAGE" && zip -r -X "$OUT" "Chrono Trigger.sh" "ct" >/dev/null )
+( cd "$STAGE" && zip -r -X "$OUT" "Chrono Trigger.sh" "gameinfo.xml" "ct" >/dev/null )
 
 echo ">> built $OUT ($(du -h "$OUT" | cut -f1))"
 echo ">> contents:"
