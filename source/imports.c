@@ -240,11 +240,67 @@ static int clock_gettime_fake(int clk, struct timespec *tp) {
 static void glBindFramebuffer_scaled(GLenum target, GLuint fb) {
   glBindFramebuffer(target, ct_rescale_redirect_fb(fb));
 }
+
+// config.force_nearest -- kill bilinear sampling of the game's own textures at
+// the GL boundary. Enforcing it here rather than by patching libchrono's
+// texture-creation sites is deliberate: GL's default MAG filter is GL_LINEAR, so
+// a texture that never receives an explicit glTexParameteri (cocos's field
+// composite buffers, for one) samples LINEAR regardless of what the creation
+// sites were patched to, and runtime setAntiAliasTexParameters calls can re-enable
+// it afterwards. Wrapping every filter call and stamping at creation leaves no
+// path that escapes.
+static void force_nearest_params(GLenum target) {
+  glTexParameteri(target, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  glTexParameteri(target, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+}
+static GLint nearest_filter(GLint param) {
+  switch (param) {
+    case GL_LINEAR:                 return GL_NEAREST;
+    case GL_LINEAR_MIPMAP_NEAREST:
+    case GL_LINEAR_MIPMAP_LINEAR:
+    case GL_NEAREST_MIPMAP_LINEAR:  return GL_NEAREST_MIPMAP_NEAREST;
+    default:                        return param;
+  }
+}
+static void glTexParameteri_nearest(GLenum target, GLenum pname, GLint param) {
+  if (config.force_nearest &&
+      (pname == GL_TEXTURE_MIN_FILTER || pname == GL_TEXTURE_MAG_FILTER))
+    param = nearest_filter(param);
+  glTexParameteri(target, pname, param);
+}
+static void glTexParameterf_nearest(GLenum target, GLenum pname, GLfloat param) {
+  if (config.force_nearest &&
+      (pname == GL_TEXTURE_MIN_FILTER || pname == GL_TEXTURE_MAG_FILTER))
+    param = (GLfloat)nearest_filter((GLint)param);
+  glTexParameterf(target, pname, param);
+}
+
+// cocos RenderTexture (FieldMap::RewriteBg) can request a 0-sized FBO texture
+// before map data is ready; the mesa/nouveau driver then NULL-derefs in
+// st_update_renderbuffer_surface. Clamp degenerate allocations to 1x1.
+static void glTexImage2D_guard(GLenum target, GLint level, GLint internalformat,
+    GLsizei width, GLsizei height, GLint border, GLenum format, GLenum type,
+    const void *pixels) {
+  if (width <= 0 || height <= 0) {
+    width = width <= 0 ? 1 : width;
+    height = height <= 0 ? 1 : height;
+    pixels = NULL; // the supplied buffer no longer matches the clamped size
+  }
+  glTexImage2D(target, level, internalformat, width, height, border, format, type, pixels);
+  // Stamp at creation so textures that never set a filter cannot inherit
+  // GL's LINEAR default.
+  if (config.force_nearest && level == 0 && target == GL_TEXTURE_2D)
+    force_nearest_params(target);
+}
+
 // Shader-cache interpose (shadercache.c): same rule as the rescale redirect --
 // a probed pointer must resolve to the wrapper on every path or it would
 // bypass the cache bookkeeping mid-stream.
 static const struct { const char *name; void *fn; } gl_wrapped[] = {
   { "glBindFramebuffer", (void *)&glBindFramebuffer_scaled },
+  { "glTexImage2D", (void *)&glTexImage2D_guard },
+  { "glTexParameterf", (void *)&glTexParameterf_nearest },
+  { "glTexParameteri", (void *)&glTexParameteri_nearest },
   { "glShaderSource", (void *)&ct_sc_glShaderSource },
   { "glCompileShader", (void *)&ct_sc_glCompileShader },
   { "glGetShaderiv", (void *)&ct_sc_glGetShaderiv },
@@ -332,20 +388,6 @@ static GLboolean gl_UnmapBufferOES(GLenum target) {
   static PFNGLUNMAPBUFFEROESPROC fn = NULL;
   if (!fn) fn = (PFNGLUNMAPBUFFEROESPROC)eglGetProcAddress("glUnmapBufferOES");
   return fn ? fn(target) : GL_FALSE;
-}
-
-// cocos RenderTexture (FieldMap::RewriteBg) can request a 0-sized FBO texture
-// before map data is ready; the mesa/nouveau driver then NULL-derefs in
-// st_update_renderbuffer_surface. Clamp degenerate allocations to 1x1.
-static void glTexImage2D_guard(GLenum target, GLint level, GLint internalformat,
-    GLsizei width, GLsizei height, GLint border, GLenum format, GLenum type,
-    const void *pixels) {
-  if (width <= 0 || height <= 0) {
-    width = width <= 0 ? 1 : width;
-    height = height <= 0 ? 1 : height;
-    pixels = NULL; // the supplied buffer no longer matches the clamped size
-  }
-  glTexImage2D(target, level, internalformat, width, height, border, format, type, pixels);
 }
 
 // ---------------------------------------------------------------------------
@@ -866,9 +908,9 @@ DynLibFunction dynlib_functions[] = {
   { "glStencilOp", (uintptr_t)&glStencilOp },
   { "glStencilOpSeparate", (uintptr_t)&glStencilOpSeparate },
   { "glTexImage2D", (uintptr_t)&glTexImage2D_guard },
-  { "glTexParameterf", (uintptr_t)&glTexParameterf },
+  { "glTexParameterf", (uintptr_t)&glTexParameterf_nearest },
   { "glTexParameterfv", (uintptr_t)&glTexParameterfv },
-  { "glTexParameteri", (uintptr_t)&glTexParameteri },
+  { "glTexParameteri", (uintptr_t)&glTexParameteri_nearest },
   { "glTexSubImage2D", (uintptr_t)&glTexSubImage2D },
   { "glUniform1f", (uintptr_t)&glUniform1f },
   { "glUniform1fv", (uintptr_t)&glUniform1fv },

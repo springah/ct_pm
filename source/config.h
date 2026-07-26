@@ -47,6 +47,16 @@ typedef struct {
   // with an integer scale pair like 0.5 on a 640x480 panel every internal
   // pixel maps to an exact block -- true integer scaling).
   char render_filter[8];
+  // force_nearest -- rewrite every GL texture filter to NEAREST at the wrapper
+  // (imports.c), killing bilinear sampling of the game's own art. render_filter
+  // only covers our final upscale blit; this covers how the engine samples its
+  // textures, which is where the softness actually comes from. A binary patch on
+  // libchrono's texture-creation sites is NOT sufficient: GL's default MAG filter
+  // is GL_LINEAR, so any texture created outside those paths still samples LINEAR,
+  // and runtime setAntiAliasTexParameters calls can re-enable it later. Default
+  // off -- it is a taste call: pixel art gets crisp, deliberately-softened
+  // stretched backgrounds get blocky.
+  int force_nearest;
   // mesa/GLES tuning (Linux/PortMaster).
   //   gl_threaded -- run mesa's GL submission on a worker core (mesa_glthread).
   //                  Default OFF: a no-op on blob drivers (PowerVR) and measured

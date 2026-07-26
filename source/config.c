@@ -19,6 +19,7 @@
   CONFIG_VAR_STR(language); \
   CONFIG_VAR_FLOAT(render_scale); \
   CONFIG_VAR_STR(render_filter); \
+  CONFIG_VAR_INT(force_nearest); \
   CONFIG_VAR_INT(gl_threaded); \
   CONFIG_VAR_INT(gl_no_error); \
   CONFIG_VAR_INT(shader_cache); \
@@ -57,10 +58,13 @@ int read_config(const char *file) {
   config.screen_width = -1; // auto
   config.screen_height = -1;
   strlcpy(config.language, LANG_DEFAULT, sizeof(config.language));
-  config.render_scale = 1.0f;  // native: the engine's 640x360 design space maps
-                               // cleanly onto 16:9 panels (720p = exact 2x); set
-                               // 0.75 on GPU-bound devices to trade sharpness for fps
+  config.render_scale = 1.0f;  // native; set 0.75 on GPU-bound devices to trade
+                               // sharpness for fps. (The stock 16:9 design entry is
+                               // 568x320, so no panel is an exact integer multiple
+                               // -- 720p is 2.2535x. ui_scale_fix would make it
+                               // 640x360/exact-2x, but that patch is not ported.)
   strlcpy(config.render_filter, "linear", sizeof(config.render_filter));
+  config.force_nearest = 0;    // taste call, off until A/B'd on-device
   config.gl_threaded = 0;      // mesa_glthread: no-op on blob drivers (PowerVR),
                                // measured latency on panfrost/Mali -- off by default
   config.gl_no_error = 1;      // skip mesa's per-call GL validation (MESA_NO_ERROR)

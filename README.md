@@ -53,17 +53,18 @@ section, milestone history, and the `os_*` abstraction map.
 
 ## Displays: what to expect
 
-The engine lays the game out in a **640×360 (16:9) design space** and scales it to
-whatever panel it is told:
+The engine picks a design resolution per aspect ratio and scales it to whatever panel
+it is told. The 16:9 entry is **568×320**, so no common panel is an exact integer
+multiple of it — 720p works out to ~2.25×:
 
-* **16:9 panels are its home turf, and 720p is ideal** — 1280×720 is an exact **2×**
-  of the design space, so sprites and UI land on clean pixel boundaries. On a
-  720p-class device the defaults (native resolution + shader cache) give the best
-  look and feel this port can produce.
-* **4:3 and other aspects work**, but are off-design: the engine's adaptive camera
-  reframes vertically and draws the art at a fractional zoom (~2.1–2.5× at 640×480),
-  so sprite pixels come out slightly uneven. That is the engine's own scaling, not
-  the port's — `render_scale`/`render_filter` cannot fix it, only soften (`0.75` +
+* **16:9 panels are its home turf, and 720p looks best in practice** — the adaptive
+  camera frames as intended and the defaults (native resolution + shader cache) give
+  the best look and feel this port can produce. The scale is still fractional, so
+  sprite pixels are not perfectly uniform; `force_nearest` is the lever for that.
+* **4:3 and other aspects work**, but are further off-design: the camera reframes
+  vertically and draws the art at a fractional zoom (~2.1–2.5× at 640×480), so
+  sprite pixels come out slightly uneven. That is the engine's own scaling, not the
+  port's — `render_scale`/`render_filter` cannot fix it, only soften (`0.75` +
   `linear`) or expose (`1`) it.
 * **Don't chase integer scaling on 480p panels** with `render_scale 0.5` +
   `render_filter nearest`: the engine scales its UI text down along with the art,
@@ -85,13 +86,19 @@ noticeably smoother once it is warm. If heavy scenes still dip on a weak GPU,
   English.
 * `render_scale` — internal render resolution as a fraction of the panel: the engine
   renders into a `panel × scale` FBO that is upscaled at present. Defaults to **1**
-  (native — the engine's 640×360 design space maps cleanly onto 16:9 panels; 720p is
-  an exact 2×). Set `0.75` on GPU-bound devices to trade sharpness for fps. See
-  `source/rescale.c`.
+  (native, which looks best on 16:9). Set `0.75` on GPU-bound devices to trade
+  sharpness for fps. See `source/rescale.c`.
 * `render_filter` — the upscale filter at present: `linear` (default, soft) or
   `nearest` (sharp). Pair `nearest` with an integer scale — e.g. `render_scale 0.5`
   on a 640×480 panel renders 320×240 and maps every internal pixel to an exact 2×2
   block: true integer scaling. Env override `CT_RENDER_FILTER`.
+* `force_nearest` — **off** by default. Rewrites every texture filter the engine sets
+  to `NEAREST`, and stamps it at texture creation. This is the one that affects the
+  game's own art: `render_filter` only covers the port's final upscale blit, whereas
+  the softness you actually see comes from the engine sampling its textures bilinearly
+  at a fractional zoom. Turning it on makes pixel art crisp; it also makes
+  deliberately-softened stretched backgrounds blocky, so it is a taste call. See
+  `source/imports.c`.
 * `gl_threaded` / `gl_no_error` — mesa/GLES tuning. `gl_threaded` (mesa's
   `mesa_glthread`) is **off** by default: it is a no-op on blob drivers (PowerVR) and
   measurably adds latency on panfrost/Mali; set `1` only if your driver demonstrably
