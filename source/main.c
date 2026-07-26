@@ -682,7 +682,8 @@ int main(void) {
     fprintf(stderr,
             "ct: WARNING -- libchrono.so is not the supported Chrono Trigger Android "
             "v2.1.5 build (offset fingerprint mismatch). Version-specific fixes "
-            "(FMV->title transition, CT_MOVELOG) are DISABLED. The game requires the "
+            "(FMV->title transition, CT_MOVELOG, config.language override) are "
+            "DISABLED; the game will pick its own language. The game requires the "
             "v2.1.5 libchrono.so.\n");
 
   // Force the UI/text language to config.language regardless of what the engine
@@ -691,14 +692,24 @@ int main(void) {
   // getCurrentLanguage() and getLocalizeResourcePath(). We can't reliably win
   // the timing race against the engine's own write, so we patch those two reads
   // to a constant (the config index). Done now, while load_base is writable.
-  {
-    const int idx = lang_index() & 0xffff;
-    // getCurrentLanguage: ldr w0,[x8] @ +0x8  ->  movz w0, #idx
-    uintptr_t gcl = so_find_addr(&game_mod, "_ZN10DeviceInfo18getCurrentLanguageEv");
-    *(uint32_t *)(gcl + 0x8) = 0x52800000u | ((uint32_t)idx << 5);
-    // getLocalizeResourcePath: ldrsw x9,[x9] @ +0x20  ->  movz x9, #idx
-    uintptr_t glrp = so_find_addr(&game_mod, "_ZN10DeviceInfo23getLocalizeResourcePathEv");
-    *(uint32_t *)(glrp + 0x20) = 0xd2800009u | ((uint32_t)idx << 5);
+  //
+  // These are instruction offsets inside two engine accessors, so they are as
+  // build-specific as anything in patches.h and go through the same verified
+  // path: gated on the v2.1.5 fingerprint, and each write checks its expected
+  // old word so a different build skips instead of corrupting itself.
+  if (g_libchrono_v215) {
+    const uint32_t idx = (uint32_t)(lang_index() & 0xffff);
+    const PatchEntry lang_patches[] = {
+      { "_ZN10DeviceInfo18getCurrentLanguageEv", 0x8, 0,
+        0xb9400100u,                        // ldr w0, [x8]
+        0x52800000u | (idx << 5),           // -> movz w0, #idx
+        "language: getCurrentLanguage returns config.language" },
+      { "_ZN10DeviceInfo23getLocalizeResourcePathEv", 0x20, 0,
+        0xb9800129u,                        // ldrsw x9, [x9]
+        0xd2800009u | (idx << 5),           // -> movz x9, #idx
+        "language: getLocalizeResourcePath uses config.language" },
+    };
+    apply_patches(&game_mod, lang_patches, PATCH_COUNT(lang_patches));
   }
 
   // CT_MOVELOG: hook NanameHantei() to log per-frame dx/dy + sub-pixel accumulators.
