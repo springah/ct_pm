@@ -17,14 +17,24 @@
 #
 # Usage:  portmaster/package.sh [path-to-ct-binary]
 #   default binary: ./ct (repo root, where portmaster/build.sh writes it)
-#   override out dir/name with OUT=/path/ct.zip
+#   override out dir/name with OUT=/path/whatever.zip
+#
+# The distributed archive carries its version (ct-<version>.zip) so a downloaded
+# file can be identified without opening it. That is deliberately NOT the same
+# string as port.json's "name": that field is the port's identity to
+# HarbourMaster and must stay "ct.zip" to match the port directory, which is also
+# what the Multiverse build tooling enforces. Download filename and port identity
+# are different things; do not "fix" one to match the other.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "$HERE/.." && pwd)"
 PKG="$HERE/pkg"
 CT_BIN="${1:-$REPO/ct}"
-OUT="${OUT:-$REPO/ct.zip}"
+# Single source of truth for the version: the same header the binary reports.
+CT_VER="$(sed -n 's/^#define CT_VERSION "\(.*\)"/\1/p' "$REPO/source/version.h")"
+[ -n "$CT_VER" ] || { echo "!! could not read CT_VERSION from source/version.h" >&2; exit 1; }
+OUT="${OUT:-$REPO/ct-$CT_VER.zip}"
 
 die() { echo "!! $*" >&2; exit 1; }
 
