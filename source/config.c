@@ -64,7 +64,7 @@ int read_config(const char *file) {
                                // -- 720p is 2.2535x. ui_scale_fix would make it
                                // 640x360/exact-2x, but that patch is not ported.)
   strlcpy(config.render_filter, "linear", sizeof(config.render_filter));
-  config.force_nearest = 0;    // taste call, off until A/B'd on-device
+  config.force_nearest = 1;    // crisp pixel art; A/B'd on the TrimUI (PowerVR GE8300)
   config.gl_threaded = 0;      // mesa_glthread: no-op on blob drivers (PowerVR),
                                // measured latency on panfrost/Mali -- off by default
   config.gl_no_error = 1;      // skip mesa's per-call GL validation (MESA_NO_ERROR)

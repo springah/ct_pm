@@ -1,6 +1,7 @@
 // os_linux.c — SDL2 + POSIX backend of os.h for the PortMaster aarch64 target
-// (TrimUI Smart Pro et al). Skeleton: the loader/TLS/GL core is real; input and
-// a few env hooks are marked TODO. Reimplemented from the gmloader-next pattern
+// (TrimUI Smart Pro et al). Complete: loader/TLS/GL core, input (os_input_poll
+// with hotplug, per-GUID mapping fallback and the quit combos) and the env
+// hooks. Reimplemented from the gmloader-next pattern
 // (read-only reference, GPL-3) under ct_nx's MIT.
 //
 // Build inside the PortMaster builder:  ~/Desktop/ct-pm-shell.sh

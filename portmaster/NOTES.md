@@ -6,7 +6,7 @@ for the full scope and `~/Desktop/ct-pm-shell.sh` to enter the builder.
 
 ## Files
 - `os.h`       — platform abstraction (the only OS surface the shared code may call).
-- `os_linux.c` — SDL2 + POSIX backend (loader/TLS/GL core real; input/env = TODO).
+- `os_linux.c` — SDL2 + POSIX backend (complete: loader/TLS/GL core, input, env).
 - `os_switch.c` — NOT YET WRITTEN: move the existing libnx calls out of `source/`
   into this backend so both platforms share one tree.
 
@@ -105,20 +105,10 @@ compat_libc}.c, link `$(sdl2-config --libs) -lGLESv2 -lEGL $(pkg-config --libs f
 is 0-on-success; egl_init is 1-on-success) — got it backwards first and aborted despite OK GL.
 
 ## Build order
-0. `~/Desktop/ct-pm-shell.sh`
-1. [done] loader (#1).  2. [done] imports resolve (#2).  3. [done] boots + runs engine (#3).
-4. **On-device bring-up (needs the TrimUI — real GPU + full data):**
-   - Confirm title-screen renders (software GL is too slow to verify visually).
-   - `common.bin` / archive data-path: engine fopen's `<gamedir>/common.bin` (probe) and
-     falls back to resources.bin archive reader — verify asset.c archive path serves it.
-   - Controller input: implement `os_input_poll` mapping (SDL_GameController → OS_BTN_*),
-     then revive the e_ctrl*/e_key* injection on Linux (currently stubbed `update_keys`).
-   - Bundle a TTF font (gfx.c fallback list); FMV via runtime ffmpeg (replace movie_stub).
-5. PortMaster packaging: `ct.sh`, `port.json`, gptokeyb fallback, `$GAMEDIR` layout.
-
-## Compile check
-`os_linux.c` syntax-checked in the builder (SDL2 2.32, glibc 2.31). It is a skeleton —
-not yet linked against the rest; input/env TODOs marked inline.
+All bring-up milestones are complete and shipping as of v1.0.0-beta.7 (loader, import
+resolution, engine boot, on-device title render, the `common.bin`/resources.bin archive
+path, `os_input_poll` controller mapping, the bundled TTF font, FMV via runtime FFmpeg,
+and PortMaster packaging). See the git history for the sequence.
 
 ## FMV / cutscenes — WIRED (2026-06-24)
 The intro + story cutscenes (`assets/001.dat`..`008.dat`, `007-en.dat`) are
@@ -162,10 +152,10 @@ can't leak). Zip extracts to `/roms/ports/`: `Chrono Trigger.sh` + `ct/{port.jso
 font.ttf, screenshot.png, libs.aarch64/, licenses/}`. port.json is `version 2`, `name
 "ct_pm.zip"`, `rtr false`, `runtime null`, `arch ["aarch64"]` (the Half-Life template — the
 canonical native, user-supplied-commercial-files port). This is the self-host / on-device
-zip; an OFFICIAL PortMaster submission is built by `tools/build_release.py` in a
-PortMaster-New fork from the repo-layout tree (metadata + README.md + gameinfo.xml at the
-port top level) and needs a 4:3 gameplay screenshot + multi-CFW testing — see the packaging
-gap-analysis. Launcher uses the framework helpers `get_controls`, `pm_platform_helper`,
+zip only. For the OFFICIAL submission, `portmaster/multiverse/README.md` is the single
+source of truth — note the target repo is **PortMaster-MV-New** (the older
+PortMaster-Multiverse is archived), the layout is `ports/ct/`, `tools/build_release.py`
+builds the zip and enforces `name "ct.zip"`, and a gameplay screenshot is required. Launcher uses the framework helpers `get_controls`, `pm_platform_helper`,
 `pm_finish` (all provided by control.txt/funcs.txt/mod_<cfw>.txt).
 
 ### Verification (2026-06-24)

@@ -1,6 +1,15 @@
 The MIT License (MIT)
 
 Copyright (C) 2021 Andy Nguyen, fgsfds
+Copyright (C) 2026 springah
+
+Scope: the MIT grant below covers the source in this repository. It does NOT
+cover the third-party files that ship alongside it, which keep their own terms:
+`portmaster/pkg/ct/font.ttf` (ChronoType, CC BY-NC-SA 3.0 -- see
+`portmaster/pkg/ct/licenses/`) and the bundled FFmpeg shared objects in
+`portmaster/pkg/ct/libs.aarch64/` (LGPL-2.1-or-later). No Chrono Trigger game
+data is included in this repository or in any release artifact; you supply that
+from your own legally-owned copy.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

@@ -81,7 +81,8 @@ noticeably smoother once it is warm. If heavy scenes still dip on a weak GPU,
 * `screen_width` / `screen_height` — `-1` = panel default.
 * `language` — in-game text/UI localization; the game ships all nine under
   `Localize/<code>/`. One of `en fr de it es ja ko zh` (`zh-Hant` / `zh_TW` = Traditional
-  Chinese), or `default` (the shipped default) to auto-detect from the system `$LANG`.
+  Chinese), or `default` (the shipped default) to auto-detect from the system locale
+  (`$LC_ALL`, then `$LC_MESSAGES`, then `$LANG`).
   Each code loads its own localized data; an unrecognized/unsupported value falls back to
   English.
 * `render_scale` — internal render resolution as a fraction of the panel: the engine
@@ -92,12 +93,12 @@ noticeably smoother once it is warm. If heavy scenes still dip on a weak GPU,
   `nearest` (sharp). Pair `nearest` with an integer scale — e.g. `render_scale 0.5`
   on a 640×480 panel renders 320×240 and maps every internal pixel to an exact 2×2
   block: true integer scaling. Env override `CT_RENDER_FILTER`.
-* `force_nearest` — **off** by default. Rewrites every texture filter the engine sets
+* `force_nearest` — **on** by default. Rewrites every texture filter the engine sets
   to `NEAREST`, and stamps it at texture creation. This is the one that affects the
   game's own art: `render_filter` only covers the port's final upscale blit, whereas
   the softness you actually see comes from the engine sampling its textures bilinearly
-  at a fractional zoom. Turning it on makes pixel art crisp; it also makes
-  deliberately-softened stretched backgrounds blocky, so it is a taste call. See
+  at a fractional zoom. Set `0` for the softer bilinear look — at `1` the pixel art is
+  crisp but deliberately-softened stretched backgrounds go blocky. See
   `source/imports.c`.
 * `gl_threaded` / `gl_no_error` — mesa/GLES tuning. `gl_threaded` (mesa's
   `mesa_glthread`) is **off** by default: it is a no-op on blob drivers (PowerVR) and
@@ -126,9 +127,17 @@ instruction, so a different build safely skips them). Set `0` to disable any one
 * `right_stick_mirror` — `1` (default) = the right stick also drives movement when the
   left stick is centred; `0` = left stick only.
 
-Launcher env overrides: `CT_FONT_SCALE` (UI font size, default `1.5`), `CT_RENDER_SCALE` /
-`CT_RENDER_FILTER` / `CT_SHADER_CACHE` (override their config keys), and `CT_TEXT_SHADOW`
-(`off` / `auto` / `dx,dy,opacity` — the SNES-style 1px drop-shadow is baked in otherwise).
+Launcher env overrides: `CT_FONT_SCALE` (UI font size; the binary's own default is `1.0`,
+and the launcher passes `1.5`), `CT_RENDER_SCALE` / `CT_RENDER_FILTER` / `CT_SHADER_CACHE`
+(override their config keys), and `CT_TEXT_SHADOW` (`off` / `auto` / `force` /
+`dx,dy,opacity` — the SNES-style 1px drop-shadow is baked in otherwise).
+
+Troubleshooting: set `CT_LOG=1` to enable the port's own logging (it is off in release
+builds, so a quiet `log.txt` does **not** mean a feature is inactive). The launcher already
+redirects stdout and stderr to `log.txt` in the port directory. Further dev-only traces:
+`CT_IOLOG` (asset/file I/O), `CT_SHADER_LOG` (program cache), `CT_MOVELOG` (per-frame
+movement), `CT_STICKLOG` (analog input), `CT_CAPTURE` (dump frames as PPM), `CT_WINDOWED`,
+`CT_IOBUF_KB`, `CT_OSK_TEST` / `CT_OSK_CAPTURE` (on-screen keyboard).
 The launcher also adds a temporary zram swap and eases the CPU governor for the session
 (`CT_GOV` / `CT_MIN_KHZ`), restoring both on exit.
 

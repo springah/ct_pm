@@ -54,8 +54,8 @@ typedef struct {
   // libchrono's texture-creation sites is NOT sufficient: GL's default MAG filter
   // is GL_LINEAR, so any texture created outside those paths still samples LINEAR,
   // and runtime setAntiAliasTexParameters calls can re-enable it later. Default
-  // off -- it is a taste call: pixel art gets crisp, deliberately-softened
-  // stretched backgrounds get blocky.
+  // ON (verified on-device): pixel art gets crisp. Set 0 for the softer,
+  // bilinear look -- deliberately-softened stretched backgrounds go blocky at 1.
   int force_nearest;
   // mesa/GLES tuning (Linux/PortMaster).
   //   gl_threaded -- run mesa's GL submission on a worker core (mesa_glthread).

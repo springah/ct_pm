@@ -10,10 +10,10 @@
 # The user drops their own libchrono.so/libc++_shared.so/assets/ into ct/ on
 # first run (the launcher gates on them).
 #
-# NOTE: this builds the self-host / on-device install zip. An OFFICIAL PortMaster
-# submission is produced differently -- by `tools/build_release.py` inside a
-# PortMaster-New fork, from the repo-layout tree (metadata files at the port top
-# level + README.md + gameinfo.xml). See portmaster/NOTES.md.
+# NOTE: this builds the self-host / on-device install zip. An OFFICIAL submission
+# is produced differently -- by `tools/build_release.py` inside a PortMaster-MV-New
+# fork, from a `ports/ct/` repo-layout tree. See portmaster/multiverse/README.md,
+# which is the single source of truth for submission.
 #
 # Usage:  portmaster/package.sh [path-to-ct-binary]
 #   default binary: ./ct (repo root, where portmaster/build.sh writes it)

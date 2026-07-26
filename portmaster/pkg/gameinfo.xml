@@ -1,7 +1,8 @@
 <?xml version="1.0"?>
-<!-- EmulationStation metadata. NOTE: not used by the Multiverse submission (PortMaster
-     generates ES metadata itself; the MV zip contains no gameinfo.xml). Kept for
-     completeness / a possible PortMaster-New cross-list. -->
+<!-- EmulationStation metadata. Required by the PortMaster-MV-New submission
+     (build_release.py lists it in REQUIRED_FILES and writes it into the zip), and
+     also used for the self-host install. The <image> filename below must match the
+     screenshot that actually ships in ports/ct/. -->
 <gameList>
     <game>
         <path>./Chrono Trigger.sh</path>
