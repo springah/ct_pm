@@ -39,6 +39,7 @@
   CONFIG_VAR_FLOAT(field_zoom); \
   CONFIG_VAR_INT(map_zoom_fix); \
   CONFIG_VAR_FLOAT(map_zoom); \
+  CONFIG_VAR_INT(map_minimap_fix); \
   CONFIG_VAR_INT(font_snap); \
   CONFIG_VAR_INT(text_scale_fix); \
   CONFIG_VAR_FLOAT(font_scale);
@@ -99,8 +100,9 @@ int read_config(const char *file) {
   config.field_zoom = 0.0f;         // auto
   config.map_zoom_fix = 1;
   config.map_zoom = 0.0f;           // auto = field_zoom
-  config.font_snap = 2;             // pixel-font glyphs on the grid, half steps allowed (gfx.c)
-  config.font_scale = 0.0f;         // auto (patches.h framing picks 1.0 / 1.5)
+  config.map_minimap_fix = 1;
+  config.font_snap = 0;             // auto (gfx.c: whole steps on narrow panels, half on wide)
+  config.font_scale = 0.0f;         // auto (gfx.c: 1.0 narrow / 1.25 wide)
   config.text_scale_fix = 1;        // labels drawn 1:1 (patches.h)
 
   FILE *f = fopen(file, "r");

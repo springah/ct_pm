@@ -6,7 +6,7 @@
 #
 # The zip extracts into /roms/ports/, yielding the runtime layout:
 #   Chrono Trigger.sh
-#   ct/{port.json, ct, font.ttf, screenshot.png, libs.aarch64/, licenses/}
+#   ct/{port.json, ct, font.ttf, font-4x3.ttf, screenshot.png, libs.aarch64/, licenses/}
 # The user drops their own libchrono.so/libc++_shared.so/assets/ into ct/ on
 # first run (the launcher gates on them).
 #
@@ -42,6 +42,7 @@ die() { echo "!! $*" >&2; exit 1; }
 [ -f "$PKG/port.json" ]                       || die "missing $PKG/port.json"
 [ -f "$PKG/Chrono Trigger.sh" ]               || die "missing launch script"
 [ -f "$PKG/ct/font.ttf" ]                     || die "missing pkg/ct/font.ttf"
+[ -f "$PKG/ct/font-4x3.ttf" ]                 || die "missing pkg/ct/font-4x3.ttf"
 [ -d "$PKG/ct/libs.aarch64" ]                 || die "missing pkg/ct/libs.aarch64 (run ffmpeg-build.sh + copy the .so in)"
 ls "$PKG/ct/libs.aarch64"/lib*.so* >/dev/null 2>&1 || die "no FFmpeg .so in pkg/ct/libs.aarch64"
 [ -d "$PKG/ct/licenses" ]                     || die "missing pkg/ct/licenses"
@@ -59,6 +60,7 @@ mkdir -p "$STAGE/ct/libs.aarch64" "$STAGE/ct/licenses"
 cp "$PKG/port.json"                  "$STAGE/ct/port.json"
 cp "$CT_BIN"                         "$STAGE/ct/ct"
 cp "$PKG/ct/font.ttf"                "$STAGE/ct/font.ttf"
+cp "$PKG/ct/font-4x3.ttf"            "$STAGE/ct/font-4x3.ttf"
 cp "$PKG/ct/libs.aarch64/"lib*.so*   "$STAGE/ct/libs.aarch64/"
 cp "$PKG/ct/licenses/"*              "$STAGE/ct/licenses/"
 cp "$PKG/ct/screenshot.png"          "$STAGE/ct/screenshot.png"

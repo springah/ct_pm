@@ -122,25 +122,26 @@ typedef struct {
   float field_zoom;
   int   map_zoom_fix;
   float map_zoom;
-  // font_snap -- pixel fonts (ChronoType: a 16 px/em grid) only render cleanly
-  // at whole multiples of their native grid, but the engine's layout on a
-  // 4:3 panel wants 1.5x. Modes (gfx.c):
-  //   0 = off (FreeType at the fractional size: lumpy strokes)
-  //   1 = whole multiples only (1x / 2x / 3x), largest that fits the cell
-  //   2 = half multiples too (1.5x = render 3x, keep every other pixel: a
-  //       regular 1-2-1-2 px pattern)
-  //   3 = half multiples, box-filtered (1.5x with soft, even edges)
-  // Auto-detected from the font's outlines; a non-pixel font is untouched.
+  // map_minimap_fix -- world-map overview (enter/exitMiniMap) at the node's
+  // stock X so it is centred on narrow panels; 0 = leave the engine's overview
+  // where the centred node puts it (A/B knob).
+  int   map_minimap_fix;
+  // font_snap -- pixel fonts only render cleanly at whole multiples of their
+  // native grid (gfx.c auto-detects it; an outline font is left alone).
+  //   0 = auto (default): 1 on narrow panels (font-4x3.ttf at exactly 2x),
+  //       2 on wide panels (ChronoType: half steps, 1.5x = render 3x, keep
+  //       every other pixel -- pixel-exact for its 2-px strokes)
+  //   1 = whole multiples only, 2 = half multiples too, 3 = off
   int   font_snap;
   // text_scale_fix -- draw system-font labels 1:1 (patches.h). Stock cocos2d
   // renders them at points x 2 and draws the sprite at design_scale / 2, which
   // is 2/3 on a 4:3 panel: every glyph nearest-squeezed. With the fix a 12-pt
   // label is a 16 px bitmap drawn 16 px tall on 640x480. No-op at 720p.
   int   text_scale_fix;
-  // font_scale -- visual size of the UI font relative to the engine's request.
-  // 0 = auto (1.5: 12-pt labels -> 24 px on 640x480 = 1.5x ChronoType, 3 px
-  // strokes like the 3 px/art field; 1x was "tiny" in dialogue). Env
-  // CT_FONT_SCALE overrides.
+  // font_scale -- visual size of the UI font relative to the engine's request,
+  // snapped to the nearest clean size. 0 = auto: 1.0 on narrow panels (16 / 21
+  // px requests -> 20 px = 2x font-4x3), 1.25 on wide (24 / 32 -> 32 / 40 px
+  // ChronoType at 720p). Env CT_FONT_SCALE overrides.
   float font_scale;
 } Config;
 

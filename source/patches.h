@@ -33,7 +33,6 @@
 #include "util.h"
 #include <math.h>
 #include "config.h"
-#include "gfx.h"
 #ifndef __SWITCH__
 #include "rescale.h"
 #endif
@@ -922,13 +921,22 @@ static const PatchEntry g_field_zoom_fix_patches[] = {
 //   0x570d0c  FieldMap::setScrollLimit  Y-limit overhang K = (visibleH-320) * C / 320,
 //                                       wanted K = viewH - 192
 // viewH is capped at 220: the plane is a fixed 432x224 RenderTexture.
-static void apply_field_view_zoom(so_module *mod, float zoom, float design_h) {
+// Visible field rows (art px) for a zoom on a canvas: the character-pinned
+// branch or the screen-fill branch, whichever is taller, capped at 220 -- the
+// engine's field plane is 432x224 and the last rows are never drawn.
+static float field_view_rows(float zoom, float design_h) {
   if (zoom < 0.05f) zoom = 0.05f;
   const float char_y = design_h * (186.66667f / 360.0f);   // stock registration, scaled to the canvas
   float viewH = 112.0f + (design_h - char_y) / zoom;       // character-pinned branch
   float fill  = design_h / zoom;                            // screen-fill branch
   if (fill > viewH) viewH = fill;
   if (viewH > 220.0f) viewH = 220.0f;
+  return viewH;
+}
+
+static void apply_field_view_zoom(so_module *mod, float zoom, float design_h) {
+  if (zoom < 0.05f) zoom = 0.05f;
+  const float viewH = field_view_rows(zoom, design_h);
 
   const float density_v = rn16(viewH * (320.0f / design_h));
   const float conv_h    = rn16(480.0f / zoom);
@@ -970,7 +978,7 @@ static void apply_field_zoom(so_module *mod, float zoom) {
 // Only 2 of the 6 slots before the blr are free (x21 = &ctr::x_offset is read
 // again ~700 bytes later by an overlay node), so the X/Y loads go in a 20-byte
 // cave at 0x376394 (verified all-zero, R+X segment) reached by a branch.
-static void apply_field_node_anchor(so_module *mod, float zoom, float design_w) {
+static void apply_field_node_anchor(so_module *mod, float zoom, float design_w, float design_h) {
   if (zoom < 0.05f) zoom = 0.05f;
   const uint32_t CAVE_CODE  = 0x376394;
   const uint32_t BRANCH_OUT = 0x576220;  // was: movi d1,#0 (dead: old Y-arg = 0.0)
@@ -988,7 +996,14 @@ static void apply_field_node_anchor(so_module *mod, float zoom, float design_w) 
     }
 
   const float node_x = design_w * 0.5f - 128.0f * zoom;
-  const float node_y = 0.0f;
+  // Y: 0 while the plane fills the canvas. When the canvas shows more rows
+  // than the 224-row plane holds (2 px on 640x480: 240 wanted) the empty rows
+  // would all sit at the top; lift the node by half the deficit so the picture
+  // is letterboxed evenly -- the SNES's 224-line picture on a 240-line screen
+  // (measured: the plane is drawn to all 224 rows, not just the 220 the view
+  // limit budgets). Design units: the node is unscaled, its children carry zoom.
+  const float deficit = design_h - 224.0f * zoom;
+  const float node_y = deficit > 0.0f ? rn16(deficit * 0.5f) : 0.0f;
   uint32_t words[5] = {
     movz_topf(9, rn16(node_x)), fmov_s_from_w(0, 9),   // s0 = node_x
     movz_topf(10, node_y),      fmov_s_from_w(1, 10),  // s1 = node_y
@@ -1077,44 +1092,74 @@ static void apply_map_node_anchor(so_module *mod, float zoom, float design_w, fl
   apply_patches(mod, e, 7);
 }
 
-// map_zoom_fix, camera part -- DISABLED (kept as history, not called). On
-// hardware this shifted the map plane but NOT the objects: the player stood
-// 21 art px off his real tile. WorldMap::setScroll(x, y) seeds the persistent
-// scroll as (128 - x, y + 96) -- 128 = half the stock 256-art view, so the
-// player lands 128 art px from the node's left edge. WorldMap::Scroll() then
-// only adds deltas (with 1536/1024 wrap), so this one constant is the whole
-// horizontal registration. With the node at its stock X and a 256*zoom-wide
-// view, centring the player on the canvas needs 240/zoom instead (identity
-// 128 at stock 1.875; 120 at ct_nx's 2.0; 106.67 at 2.25). Objects and map
-// share the scroll, so they move together. Y is left at 96: vertical centring
-// is the node's job (apply_map_node_anchor). The stock word is a single
-// `movi v2.2s, #0x43, lsl #24` (128.0 in both lanes) with no free slot, so it
-// becomes a branch to a 3-word cave (movz w9 / fmov s2,w9 / b back). w9 is
-// dead in setScroll.
-__attribute__((unused))
-static void apply_map_scroll_anchor(so_module *mod, float zoom) {
-  if (zoom < 0.05f) zoom = 0.05f;
-  const uint32_t CAVE_CODE = 0xd0118;   // 808 zero bytes in the R+X segment (ct_nx's debug-hook cave)
-  const uint32_t SITE      = 0x6098cc;  // WorldMap::setScroll: movi v2.2s,#0x43,lsl#24
-  const uint32_t RESUME    = 0x6098d0;
+// The world-map OVERVIEW (WorldMap::enterMiniMap) is the "worldmap" node
+// itself rescaled from zoom to (0.3125, 0.2778) -- the whole 1536x1024 map at
+// the 4:3 design width (x0.5556 on 16:9) -- so it keeps the node position we
+// set in Init2: on 640x480 it sat 64 px right of centre, cut off at the panel
+// edge. Its X is correct at the node's STOCK position, so enterMiniMap sets
+// the node X to stock_x and exitMiniMap puts node_x back. Both functions
+// fetch the node with getChildByName("worldmap") and, the name being a short
+// string, skip straight to the `ldr x8,[x0]` before their setScale -- that
+// word is the site in each (the branch-not-taken path lands there too).
+// Enter: x21 is dead (rewritten right after). Exit: x21 is live, x22 is
+// free, and w9 (loaded one word earlier for the setScale that follows) is
+// re-loaded after the call by copying that word. Y is left alone: the stock
+// layout keeps the map above the year label.
+static void apply_map_minimap_anchor(so_module *mod, float stock_x, float node_x) {
   const uintptr_t base = (uintptr_t)mod->load_base;
-  const uintptr_t code_addr = base + CAVE_CODE, site_addr = base + SITE, resume_addr = base + RESUME;
-  uint8_t cur[12];
-  __builtin_memcpy(cur, (const void *)code_addr, sizeof(cur));
-  for (unsigned i = 0; i < sizeof(cur); i++)
+  const uint32_t CAVE = 0xd0218;                 // inside the 808-byte zero block, past the text caves
+  const uint32_t SETPOSX = 0x889058;             // cocos2d::Node::setPositionX(float)
+  const uint32_t ENTER = 0x60a2b4, EXIT = 0x609c24;   // both: ldr x8,[x0] with x0 = the node
+  const uint32_t sb = f32_bits(stock_x), nb = f32_bits(node_x);
+  uint32_t w[16]; int n = 0, off_exit;
+  // enter: node X -> stock_x
+  w[n++] = 0xaa0003f5u;                          // mov x21, x0
+  w[n++] = movz_w(16, (uint16_t)(sb & 0xffff));
+  w[n++] = movk_w_hi(16, (uint16_t)(sb >> 16));
+  w[n++] = fmov_s_from_w(0, 16);
+  w[n++] = encode_bl(base + CAVE + n * 4, base + SETPOSX);
+  w[n++] = 0xaa1503e0u;                          // mov x0, x21
+  w[n++] = 0xf9400008u;                          // ldr x8, [x0]
+  w[n++] = encode_b(base + CAVE + n * 4, base + ENTER + 4);
+  // exit: node X -> node_x
+  off_exit = n * 4;
+  w[n++] = 0xaa0003f6u;                          // mov x22, x0
+  w[n++] = movz_w(16, (uint16_t)(nb & 0xffff));
+  w[n++] = movk_w_hi(16, (uint16_t)(nb >> 16));
+  w[n++] = fmov_s_from_w(0, 16);
+  w[n++] = encode_bl(base + CAVE + n * 4, base + SETPOSX);
+  w[n++] = 0xaa1603e0u;                          // mov x0, x22
+  // w9 was loaded one word before the site and is consumed by the setScale
+  // after it; the call clobbered it. Re-issue whatever instruction sits there
+  // NOW -- stock `mov w9,#0x5555`, or apply_map_zoom's `movz w9,#top16(zoom)`
+  // (assuming the stock word here once scaled the node to ~0: map gone, only
+  // the separately scaled clouds left).
+  __builtin_memcpy(&w[n], (const void *)(base + EXIT - 4), 4); n++;
+  w[n++] = 0xf9400008u;                          // ldr x8, [x0]
+  w[n++] = encode_b(base + CAVE + n * 4, base + EXIT + 4);
+  const uint8_t *cur = (const uint8_t *)(base + CAVE);
+  for (int i = 0; i < n * 4; i++)
     if (cur[i]) {
-      fprintf(stderr, "ct: patches: map scroll-anchor cave @0x%x is not empty -- skipping\n", CAVE_CODE);
+      fprintf(stderr, "ct: patches: minimap anchor cave @0x%x is not empty -- skipping\n", CAVE);
       return;
     }
-  uint32_t words[3] = { movz_topf(9, rn16(240.0f / zoom)), fmov_s_from_w(2, 9), 0 };
-  words[2] = encode_b(code_addr + 8, resume_addr);
-  __builtin_memcpy((void *)code_addr, words, sizeof(words));
-  const PatchEntry e[1] = {
-    { NULL, 0, SITE, 0x0f026462, encode_b(site_addr, code_addr),
-      "WorldMap::setScroll: X half-view 128.0 -> 240/zoom via cave (was: movi v2.2s,#0x43,lsl#24)" },
+  __builtin_memcpy((void *)(base + CAVE), w, (size_t)n * 4);
+  const PatchEntry e[2] = {
+    { NULL, 0, ENTER, 0xf9400008u, encode_b(base + ENTER, base + CAVE),
+      "WorldMap::enterMiniMap: node setPositionX(stock_x) via cave" },
+    { NULL, 0, EXIT, 0xf9400008u, encode_b(base + EXIT, base + CAVE + off_exit),
+      "WorldMap::exitMiniMap: node setPositionX(node_x) via cave" },
   };
-  apply_patches(mod, e, 1);
+  apply_patches(mod, e, 2);
 }
+
+// map_zoom_fix has no camera part. Patching WorldMap::setScroll's 128.0
+// (0x6098cc, the half-view constant that registers the player horizontally)
+// to 240/zoom was tried and REMOVED: on hardware it moved the map plane but not
+// the objects (WorldObjectManager places them from its own state), so the
+// player stood 21 art px off his tile. Horizontal centring is the node's job
+// (apply_map_node_anchor) and the 2-px map rule keeps the 256-column SNES
+// window inside the panel.
 
 // ---------------------------------------------------------------------------
 // text_scale_fix -- draw system-font labels 1:1.
@@ -1271,7 +1316,20 @@ static CtFraming ct_framing_resolve(void) {
   f.design_h = (float)fh / s;
   float z = config.field_zoom;
   if (z <= 0.0f) {
-    float p = ceilf((float)fh / 220.0f);   // panel px per art px: visible rows must fit the 432x224 plane
+    float p;
+    if ((float)fw / (float)fh >= 1.6f) {
+      // Wide panels: the smallest whole px/art whose rows fit the 432x224
+      // plane (720p -> 4 px, 320x180 art: the ct_nx look).
+      p = ceilf((float)fh / 220.0f);
+    } else {
+      // Narrow panels: the SNES's 256 columns on screen (640 -> 2 px, 1024 ->
+      // 4 px), bumped only if that would ask for more than a 240-row picture
+      // (720x720 -> 3 px). 3 px on 640x480 showed 213x160 -- too little room
+      // (user, RG40XX-H); 2 px shows 320x220 with 20 px letterbox bars.
+      p = floorf((float)fw / 256.0f);
+      if (p < 1.0f) p = 1.0f;
+      while ((float)fh / p > 240.0f) p += 1.0f;
+    }
     if (p < 1.0f) p = 1.0f;
     z = p / s;
   }
@@ -1337,11 +1395,6 @@ static inline void apply_game_patches(so_module *mod) {
             (double)(fr.design_w / fr.field_zoom), (double)(fr.design_h / fr.field_zoom),
             (double)fr.map_zoom, config.ui_scale_fix ? "" : " [ui_scale_fix off: zoom patches skipped]");
     // UI font size: config font_scale, else auto by panel (see config.h).
-    // Auto: 1.5 everywhere. With text_scale_fix the labels are drawn 1:1, and
-    // 1.5x ChronoType (3 px strokes) is the SNES font's scale next to 3 px/art
-    // field sprites on 640x480; 1x read as tiny in dialogue (user, RG40XX-H).
-    // At 720p (design scale 2) 1.5 is the value the launcher always shipped.
-    gfx_set_font_scale(config.font_scale > 0.0f ? config.font_scale : 1.5f);
     if (config.ui_scale_fix) {
       if (config.text_scale_fix) apply_text_scale_fix(mod, fr.design_scale);
       if (config.field_zoom_fix) {
@@ -1349,15 +1402,17 @@ static inline void apply_game_patches(so_module *mod) {
         apply_patches(mod, g_field_zoom_fix_patches, PATCH_COUNT(g_field_zoom_fix_patches));
         apply_field_view_zoom(mod, fr.field_zoom, fr.design_h);
         apply_field_zoom(mod, fr.field_zoom);
-        apply_field_node_anchor(mod, fr.field_zoom, fr.design_w);
+        apply_field_node_anchor(mod, fr.field_zoom, fr.design_w, fr.design_h);
       }
       if (config.map_zoom_fix) {
         debugPrintf("patches: applying map_zoom_fix (zoom=%g)\n", (double)fr.map_zoom);
         apply_map_zoom(mod, fr.map_zoom);
         apply_map_node_anchor(mod, fr.map_zoom, fr.design_w, fr.design_h);
-        // apply_map_scroll_anchor is NOT called: on hardware it moved the map
-        // but not the objects (WorldObjectManager places them from its own
-        // state, not this scroll), so the player stood in the wrong place.
+        if (config.map_minimap_fix)
+          apply_map_minimap_anchor(mod, (fr.design_w - 480.0f) * 0.5f,
+                                        fr.design_w * 0.5f - 128.0f * fr.map_zoom);
+        // No camera patch: shifting WorldMap::setScroll moved the map but not
+        // the objects on hardware (see the note above ct_framing_resolve).
       }
     }
     if (config.game_area_width_fix) {

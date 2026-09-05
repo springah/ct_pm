@@ -16,8 +16,10 @@ port). The codebase is **dual-target**: the OS layer is behind `#ifdef __SWITCH_
 same `source/` builds for both Switch (libnx) and Linux (SDL2/POSIX, in `portmaster/`).
 
 > Status: **playable** — boots, renders on the GPU, plays and saves. Verified on a
-> **TrimUI Smart Pro** (Allwinner A133 / PowerVR GE8300), **Anbernic RG40XX-V** and
-> **RG35XX-SP** (Allwinner H700 / Mali-G31). **All testing to date has been on Knulli**;
+> **TrimUI Smart Pro** (Allwinner A133 / PowerVR GE8300, 1280×720), **Anbernic RG40XX-H**
+> (Allwinner H700 / Mali-G31, 640×480), **RG40XX-V** and **RG35XX-SP** (H700 / Mali-G31).
+> Both 16:9 and 4:3 panels get an exact per-panel framing (see *Displays*). **All testing
+> to date has been on Knulli**;
 > other PortMaster CFWs (muOS, ArkOS, ROCKNIX, AmberELEC) are expected to work but are
 > untested. See `portmaster/NOTES.md`.
 
@@ -90,11 +92,15 @@ exact whole-number scale per panel:
 * **16:9 panels are its home turf, and 720p looks best in practice** — the canvas becomes
   640×360 at exactly 2×, the field is drawn at 4×4 panel px per art px (320×180 art px
   visible, the ct_nx Switch framing), and text lands on the pixel font's own grid.
-* **4:3 and other aspects work.** Stock, the engine draws the field at a fractional
-  zoom there (~2.5×2.2 panel px per art px at 640×480) and its pixel font off the
-  pixel grid, so everything looks slightly uneven; the framing cluster below
-  (`ui_scale_fix` + `field_zoom_fix` + `font_snap`, on by default) draws the field
-  at exact 3×3 panel px and the text on its native grid instead.
+* **4:3 panels (640×480) get their own exact framing.** Stock, the engine draws the field
+  there at a fractional zoom (~2.5×2.2 panel px per art px), squeezes every text bitmap to
+  2/3 (see `text_scale_fix`) and puts its pixel font off the grid, so everything looks
+  slightly uneven. With the defaults the field is drawn at **2×2 panel px per art px** —
+  the SNES's 256 columns on screen, 320×220 art visible, the 224-line picture letterboxed
+  by 16 px bars top and bottom like a SNES on a 240-line display — the world map at 2 px
+  with the year plate and overview centred, the UI at the engine's own 4:3 layout, and text
+  from a second bundled pixel font (*PixelMplus10*) drawn 1:1 at exactly 2×, so text pixels
+  are the same size as art pixels.
 * **Don't chase integer scaling on 480p panels** with `render_scale 0.5` +
   `render_filter nearest`: the engine scales its UI text down along with the art,
   and at 320×240 internal the text is unreadable.
@@ -168,39 +174,39 @@ to any panel — these three are coupled, keep them together):
   drawn at a fixed 1.875×1.667 art→design scale, so art pixels are neither square nor whole
   (2.5×2.2 panel px at 640×480, 4.2×3.8 at 720p). With the fix the node is drawn at
   `field_zoom × field_zoom` and the view/camera limits follow, so the visible map still fills
-  the screen. Panel px per art px = `field_zoom × design_scale`; auto picks the smallest
-  whole number whose visible rows fit the engine's fixed 432×224 field plane: **3 px** on
-  640×480 (213×160 art px visible), **4 px** at 720p (320×180). Lower = more map, smaller
-  art; only whole panel-px sizes stay shimmer-free. The 432×224 plane caps zoom-out: below
-  ~220 visible rows a black band appears at the top.
+  the screen. Panel px per art px = `field_zoom × design_scale`. Auto: on wide panels the
+  smallest whole number whose rows fit the engine's fixed 432×224 field plane (**4 px** at
+  720p, 320×180 art visible); on narrow panels the SNES's 256 columns on screen (**2 px** on
+  640×480: 320×220 art visible, with the 224-line picture letterboxed evenly by 16 px bars,
+  as a SNES on a 240-line screen; 4 px at 1024×768). Lower = more map, smaller art; only
+  whole panel-px sizes stay shimmer-free.
 * `map_zoom_fix` / `map_zoom` — **on** / `0` = auto. The world-map counterpart: same px per
   art px as the field, capped so the SNES 256-column map window fits the panel width (the
   year plate is a screen-fixed sprite inside that window and clips otherwise): **2 px** on
   640×480 (`map_zoom 1.5`, and the map planes are wider than the SNES window, so it fills the
-  panel edge to edge), **4 px** at 720p, **2 px** at 640×360.
+  panel edge to edge), **4 px** at 720p, **2 px** at 640×360. `map_minimap_fix` (**on**) keeps
+  the full-world overview (the world map node rescaled to the design width) centred on
+  narrow panels, where the centred map node would otherwise push it 64 px right.
 * `text_scale_fix` — **on**. Draws system-font labels 1:1. The engine runs cocos2d with a
   content scale factor of 2 (its art is @2x), so stock text is rendered at points × 2 and the
   sprite drawn at design scale ÷ 2 — 1:1 at 720p, but **2/3 on a 4:3 panel**: a 24 px bitmap
   nearest-squeezed to 16 px, which no glyph size survives. With the fix a 12-pt label is a
   16 px bitmap drawn 16 px tall on 640×480 (four patched sites, no-op where design scale = 2).
-* `font_snap` — **on**. The bundled ChronoType is a pixel font on a 16 px/em grid and only
-  renders cleanly at 16/32/48 px; the engine's fractional scale asks for sizes like 20 or 13,
-  which put strokes on half pixels (alternating 1- and 2-px stems). Glyphs are rendered at
-  a clean size instead (line height unchanged), stepping down where the engine's box is
-  too narrow for the text (the HP/MP stat cells) so nothing clips. Modes: `1` = whole
-  multiples only (1×/2×/3×); `2` = half multiples too, so the 1.5× a 4:3 layout asks for
-  renders as a regular 1-2-1-2 px pattern (default); `3` = half multiples box-filtered
-  (soft, even edges); `0` = off. Env override `CT_FONT_SNAP`. Auto-detected from the
-  font's outlines, so a non-pixel `font.ttf` is left alone. Note ChronoType's strokes are
-  2 px wide on its grid, so modes 2 and 3 render identically for it.
-* `font_scale` — `0` = auto (**1.5**): 12-pt labels become 24 px on 640×480, i.e. 1.5×
-  ChronoType with 3 px strokes, the same scale as the 3 px/art field sprites (1× read as
-  tiny in dialogue). Any other value forces that scale; env `CT_FONT_SCALE` overrides.
-
-`log.txt` reports the resolved values on every launch
-(`ct: framing: frame 640x480 design 640x480 (scale 1) field_zoom 3 (3 px/art, …)`).
-
-**Input:**
+* **Fonts.** Two pixel fonts ship and the loader picks by panel: 16:9 panels use *ChronoType*
+  (`font.ttf`), whose 2-px strokes on a 16 px grid land cleanly on the 720p layout; 4:3 and
+  squarer panels use *PixelMplus10* (`font-4x3.ttf`), 1-px strokes on a 10 px grid, drawn at
+  exactly 2× — 20 px cells for the engine's 16 / 21 px requests, 2 px strokes, the same pixel
+  as the 2 px field art. (No ChronoType size fits that layout: 16 px is half the SNES height,
+  24 px has 3 px strokes against 2 px art, 32 px overflows the stat cells and dialogue box.)
+* `font_snap` — `0` = auto. Pixel fonts only render cleanly at whole multiples of their grid;
+  glyphs are drawn at the nearest clean size, the line cell grows to fit if that rounds up, and
+  a boxed label steps down when the text would clip. Auto = `1` (whole steps) with the 4:3 font,
+  `2` (half steps too: 1.5× as a regular 1-2-1-2 px pattern, pixel-exact for ChronoType's 2-px
+  strokes) with ChronoType; `3` = off. Env `CT_FONT_SNAP` overrides. The grid is detected from
+  the font's outlines, so a non-pixel `font.ttf` is left alone.
+* `font_scale` — `0` = auto: **1.0** on narrow panels (16 / 21 px → 20 px), **1.25** on wide
+  (720p: 24 / 32 → 32 / 40 px). Any other value forces that multiplier; env `CT_FONT_SCALE`
+  overrides.
 * `key_zl` / `key_zr` / `key_start` / `key_select` — remap the four extra buttons to any
   of `a b x y l r zl zr start select menu none`. Defaults map each to itself (stock).
 * `right_stick_mirror` — `1` (default) = the right stick also drives movement when the
@@ -237,7 +243,8 @@ See [`tools/pixeldemaster/README.md`](tools/pixeldemaster/README.md).
 * **NaGaa95** — [`ct_nx`](https://github.com/NaGaa95/ct_nx), the Switch port this derives from
 * **JohnnyonFlame** — [gmloader-next](https://github.com/JohnnyonFlame/gmloader-next), reference for the Linux ELF-loader + glibc TLS handling
 * the **PortMaster** community — the toolchain, builder images, and packaging conventions this port ships on
-* **Caveras** — the *ChronoType* SNES font recreation (CC BY-NC-SA; see `portmaster/pkg/ct/licenses/font-license.txt`)
+* **Caveras** — the *ChronoType* SNES font recreation (CC BY-NC-SA; see `portmaster/pkg/ct/licenses/font-license.txt`), the UI font on 16:9 panels
+* **M+ FONTS PROJECT / itouhiro** — *PixelMplus10* (M+ FONT LICENSE; `licenses/font-4x3-license.txt`), the UI font on 4:3 panels
 * **FFmpeg** — the [FFmpeg project](https://ffmpeg.org) (LGPL v2.1); a minimal decode-only
   build is bundled for cutscene playback (`portmaster/ffmpeg-build.sh`, license in
   `portmaster/pkg/ct/licenses/`)
@@ -246,4 +253,4 @@ See [`tools/pixeldemaster/README.md`](tools/pixeldemaster/README.md).
 
 No affiliation with Square Enix. "Chrono Trigger" is a trademark of its owner. No game
 assets or original program code are included; users must supply their own legally-owned
-copy. Source under the MIT License (see `LICENSE`); bundled font under its own license.
+copy. Source under the MIT License (see `LICENSE`); the bundled fonts under their own licenses.

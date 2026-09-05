@@ -27,7 +27,8 @@ static FT_Face g_faces[MAX_FACES];
 static int g_face_count = 0;
 static int g_ok = 0;
 static float g_font_scale = 1.0f;
-static int   g_font_scale_env = 0;   // CT_FONT_SCALE was set: config/auto must not override
+static int   g_snap = 0;             // resolved font_snap: 0 off, 1 whole steps, 2 half steps
+extern int screen_width, screen_height;
 
 // Pixel-font grid: the px/em size at which face 0's outlines sit exactly on
 // pixel boundaries (0 = not a pixel font). ChronoType is authored on a 16 px/em
@@ -41,30 +42,41 @@ static long gcd_l(long a, long b) { while (b) { long t = a % b; a = b; b = t; } 
 
 static void detect_font_grid(FT_Face face) {
   if (!face || !FT_IS_SCALABLE(face) || face->units_per_EM <= 0) return;
-  long g = 0;
+  // Per-glyph: the gcd of the outline coordinates gives that glyph's grid.
+  // Vote across glyphs and take the winner (a global gcd is wrecked by one
+  // stray glyph or advance -- PixelMplus has a 364-unit advance among 500s;
+  // advances are not part of the vote). Grid = upem / g must be a whole
+  // 4..64 px/em, and the winner must own nearly every outlined glyph.
+  const long upem = face->units_per_EM;
+  int votes[65] = {0}; long outlined = 0;
   long n = face->num_glyphs; if (n > 1024) n = 1024;
   for (long gi = 0; gi < n; gi++) {
     if (FT_Load_Glyph(face, (FT_UInt)gi, FT_LOAD_NO_SCALE | FT_LOAD_NO_HINTING | FT_LOAD_NO_BITMAP))
       continue;
     if (face->glyph->format != FT_GLYPH_FORMAT_OUTLINE) continue;
     const FT_Outline *o = &face->glyph->outline;
+    if (o->n_points <= 0) continue;
+    long g = 0;
     for (int i = 0; i < o->n_points; i++) {
       g = gcd_l(g, labs((long)o->points[i].x));
       g = gcd_l(g, labs((long)o->points[i].y));
     }
-    g = gcd_l(g, labs((long)face->glyph->advance.x)); // font units under NO_SCALE
+    outlined++;
+    if (g <= 0 || (upem % g) != 0) continue;
+    const long ppem = upem / g;
+    if (ppem >= 4 && ppem <= 64) votes[ppem]++;
   }
-  if (g <= 0 || (face->units_per_EM % g) != 0) return;
-  long ppem = face->units_per_EM / g;
-  if (ppem < 4 || ppem > 64) return;   // outline font, or a grid too fine to matter
-  g_font_grid = (int)ppem;
+  int best = 0;
+  for (int p = 4; p <= 64; p++) if (votes[p] > votes[best]) best = p;
+  if (!best || outlined < 16 || votes[best] * 10 < outlined * 9) return;   // outline font, or no clear grid
+  g_font_grid = best;
   debugPrintf("gfx: pixel font detected, native grid %d px/em\n", g_font_grid);
 }
 
 // Snapped sizes are exact grid multiples: render them unhinted so the outline
 // lands on the pixel grid verbatim (no AA fringe, no hinter nudging).
 static FT_Int32 glyph_load_flags(int px) {
-  if (g_font_grid > 0 && config.font_snap && (px % g_font_grid) == 0)
+  if (g_font_grid > 0 && g_snap && (px % g_font_grid) == 0)
     return FT_LOAD_RENDER | FT_LOAD_NO_HINTING;
   return FT_LOAD_RENDER;
 }
@@ -94,8 +106,18 @@ void gfx_init(void) {
   }
 
 #ifndef __SWITCH__
+  // Panel profile. Narrow panels (4:3, 1:1) run the engine's 480-wide layout,
+  // whose text sizes (16 / 21 px on 640x480) no ChronoType size lands on; the
+  // bundled font-4x3.ttf (PixelMplus10: 1-px strokes on a 10 px/em grid) at
+  // exactly 2x does -- 20 px cells, 2 px strokes, the same pixel as the 2 px
+  // field art. Wide panels keep ChronoType (font.ttf) with half-step snapping
+  // and a 1.25 scale (16:9 layout: 24 -> 32 px at 720p).
+  const int narrow = screen_height > 0 && (float)screen_width / (float)screen_height < 1.6f;
+  int font_scale_env = 0;
   { const char *s = getenv("CT_FONT_SCALE");
-    if (s) { float v = (float)atof(s); if (v > 0.1f && v < 8.0f) { g_font_scale = v; g_font_scale_env = 1; } } }
+    if (s) { float v = (float)atof(s); if (v > 0.1f && v < 8.0f) { g_font_scale = v; font_scale_env = 1; } } }
+  if (!font_scale_env)
+    g_font_scale = config.font_scale > 0.0f ? config.font_scale : (narrow ? 1.0f : 1.25f);
   { const char *s = getenv("CT_TEXT_SHADOW");
     if (s) {
       if (!strcmp(s, "off"))        g_shadow_mode = 0;
@@ -133,22 +155,32 @@ void gfx_init(void) {
   // common system paths) for Latin + CJK coverage. Missing fonts degrade
   // gracefully (system-font labels just won't draw; the engine still boots).
   static const char *candidates[] = {
-    "font.ttf", "fonts/standard.ttf",
+    "font-4x3.ttf", "font.ttf", "fonts/standard.ttf",
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     "/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf",
     "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
   };
+  const char *primary = NULL;
   for (unsigned i = 0; i < sizeof(candidates) / sizeof(*candidates) && g_face_count < MAX_FACES; i++) {
-    if (FT_New_Face(g_ft, candidates[i], 0, &g_faces[g_face_count]) == 0)
+    if (i == 0 && !narrow) continue;                       // the 4:3 font only on narrow panels
+    if (FT_New_Face(g_ft, candidates[i], 0, &g_faces[g_face_count]) == 0) {
+      if (!primary) primary = candidates[i];
       g_face_count++;
+    }
   }
 #endif
 
   if (g_face_count > 0) detect_font_grid(g_faces[0]);
 #ifndef __SWITCH__
-  { const char *s = getenv("CT_FONT_SNAP"); if (s) config.font_snap = atoi(s); }
-  fprintf(stderr, "gfx: %d font face(s), pixel grid %d px/em, font_snap %d, font_scale %g\n",
-          g_face_count, g_font_grid, config.font_snap, (double)g_font_scale);
+  // font_snap: config 0 = auto (whole steps for the 4:3 font, half steps for
+  // ChronoType), 1 / 2 explicit, 3 = off; env CT_FONT_SNAP wins.
+  int snap = config.font_snap;
+  { const char *s = getenv("CT_FONT_SNAP"); if (s) snap = atoi(s); }
+  if (snap == 0) snap = narrow ? 1 : 2;
+  g_snap = (snap == 1 || snap == 2) ? snap : 0;
+  fprintf(stderr, "gfx: %d font face(s) (%s), pixel grid %d px/em, %s panel, font_snap %d, font_scale %g\n",
+          g_face_count, primary ? primary : "none", g_font_grid, narrow ? "narrow" : "wide",
+          g_snap, (double)g_font_scale);
 #endif
   g_ok = g_face_count > 0;
   if (!g_ok)
@@ -206,14 +238,14 @@ typedef struct {
 #define GCACHE_SIZE 2048
 static Glyph g_gcache[GCACHE_SIZE];
 
-// Half-step pixel-font sizes (font_snap 2/3): a size that is an odd multiple
-// of half the grid (24 px for a 16 px grid = 1.5x) is rendered at double size
-// on the exact grid and then halved -- every art pixel becomes 1.5 device px.
-// Mode 2 decimates (nearest: a regular 1-2-1-2 px pattern, the classic
-// non-integer retro look); mode 3 box-averages (soft but perfectly even).
+// Half-step pixel-font sizes (font_snap 2): a size that is an odd multiple of
+// half the grid (24 px for a 16 px grid = 1.5x) is rendered at double size on
+// the exact grid and then decimated -- every art pixel becomes 1 or 2 device
+// px (a regular 1-2-1-2 pattern; a 2-px stroke lands on exactly 3). For
+// ChronoType, whose strokes are 2 px on its grid, this is pixel-exact.
 static int half_step_px(int px) {
   extern Config config;
-  return g_font_grid > 0 && (config.font_snap == 2 || config.font_snap == 3) &&
+  return g_font_grid > 0 && g_snap == 2 &&
          (px % g_font_grid) != 0 && (px % (g_font_grid / 2)) == 0;
 }
 
@@ -248,23 +280,9 @@ static const Glyph *get_glyph(uint32_t cp, int px) {
         const int W = (W2 + 1) / 2, R = (R2 + 1) / 2;
         e->buf = (unsigned char *)malloc((size_t)W * R);
         if (e->buf) {
-          const int box = config.font_snap == 3;
           for (int y = 0; y < R; y++)
-            for (int x = 0; x < W; x++) {
-              int v;
-              if (!box) {
-                v = sl->bitmap.buffer[(size_t)(2 * y) * pitch + 2 * x];
-              } else {
-                int sum = 0, n = 0;
-                for (int dy = 0; dy < 2; dy++)
-                  for (int dx = 0; dx < 2; dx++) {
-                    const int sy = 2 * y + dy, sx = 2 * x + dx;
-                    if (sy < R2 && sx < W2) { sum += sl->bitmap.buffer[(size_t)sy * pitch + sx]; n++; }
-                  }
-                v = n ? sum / n : 0;
-              }
-              e->buf[(size_t)y * W + x] = (unsigned char)v;
-            }
+            for (int x = 0; x < W; x++)
+              e->buf[(size_t)y * W + x] = sl->bitmap.buffer[(size_t)(2 * y) * pitch + 2 * x];
           e->w = W; e->rows = R;
           e->adv  = (e->adv + 1) / 2;
           e->left = e->left / 2;
@@ -344,12 +362,6 @@ static void draw_line_glyphs(unsigned char *out, int W, int H,
   }
 }
 
-void gfx_set_font_scale(float scale) {
-  if (g_font_scale_env || !(scale > 0.1f && scale < 8.0f)) return;
-  g_font_scale = scale;
-  fprintf(stderr, "gfx: font_scale %g\n", (double)scale);
-}
-
 unsigned char *gfx_render_text_rgba(const char *text, int font_size,
                                     int r, int g, int b, int a,
                                     int align_h, int max_w, int max_h, int wrap,
@@ -376,13 +388,18 @@ unsigned char *gfx_render_text_rgba(const char *text, int font_size,
   // raster moves. If the engine constrains the label and the text would not
   // fit at that size, step down a multiple (a narrow stat cell gets 1x while a
   // wide button or dialog line keeps 2x).
-  const int snap = (g_font_grid > 0 && config.font_snap);
+  const int snap = (g_font_grid > 0 && g_snap);
   // step = the grid (mode 1: 1x, 2x, 3x ...) or half of it (modes 2/3: also
   // 1.5x, 2.5x ... via the double-render-and-halve path in get_glyph).
-  const int step = (config.font_snap >= 2) ? g_font_grid / 2 : g_font_grid;
+  // Nearest step, ties up: the engine's sizes sit between clean ones (16 / 21 /
+  // 29 px on 640x480), and flooring put the 21 px dialogue a whole step below
+  // the 16 px labels' ratio (or, scaled x1.5, a step above: 32 px overflowed
+  // the dialogue box). The fit loop below still steps down where a boxed
+  // label would clip.
+  const int step = (g_snap >= 2) ? g_font_grid / 2 : g_font_grid;
   int k = 0;
   if (snap) {
-    k = px / step;
+    k = (px + step / 2) / step;
     if (k * step < g_font_grid) k = g_font_grid / step;   // never below 1x
     rpx = k * step;
   }
@@ -394,6 +411,22 @@ unsigned char *gfx_render_text_rgba(const char *text, int font_size,
   int line_h = (int)(g_faces[0]->size->metrics.height >> 6);
   if (line_h <= 0) line_h = px + px / 4;
   if (ascender <= 0) ascender = (px * 4) / 5;
+
+  // Glyph cell for the (possibly snapped) render size: a size snapped UP past
+  // the engine's request (16 -> 20 px) has taller glyphs than the engine's
+  // line cell, so the cell grows to fit -- else descenders are clipped (seen
+  // with PixelMplus10: 19-row cell, 22-row glyphs, the y/g tails cut off).
+  #define SNAPPED_CELL(rpx_, out_asc, out_desc, out_line_h) do {                 \
+    FT_Set_Pixel_Sizes(g_faces[0], 0, (rpx_));                                  \
+    (out_asc)  = (int)(g_faces[0]->size->metrics.ascender >> 6);               \
+    (out_desc) = (int)(-(g_faces[0]->size->metrics.descender >> 6));           \
+    if ((out_asc) <= 0) (out_asc) = ((rpx_) * 4) / 5;                           \
+    if ((out_asc) + (out_desc) <= 0) (out_asc) = (rpx_);                        \
+    (out_line_h) = (line_h_req > (out_asc) + (out_desc)) ? line_h_req : (out_asc) + (out_desc); \
+  } while (0)
+  const int line_h_req = line_h;
+  int asc_r = 0, desc_r = 0;
+  SNAPPED_CELL(rpx, asc_r, desc_r, line_h);
 
   // split into lines on '\n'; optionally greedy-wrap to max_w
   // (we collect line start/end byte ranges)
@@ -441,6 +474,7 @@ unsigned char *gfx_render_text_rgba(const char *text, int font_size,
         ((max_w > 0 && meas_w > max_w) || (max_h > 0 && nlines * line_h > max_h))) {
       k--;
       rpx = k * step;
+      SNAPPED_CELL(rpx, asc_r, desc_r, line_h);
       continue;
     }
     break;
@@ -448,11 +482,9 @@ unsigned char *gfx_render_text_rgba(const char *text, int font_size,
   int meas_h = nlines * line_h;
   if (meas_h < ascender + descender) meas_h = ascender + descender;
 
-  // reduced-size glyph metrics, for vertical centring within each px line cell
+  // snapped-size glyph metrics (asc_r/desc_r), for vertical centring within
+  // each line cell
   FT_Set_Pixel_Sizes(g_faces[0], 0, rpx);
-  int asc_r = (int)(g_faces[0]->size->metrics.ascender >> 6);
-  int desc_r = (int)(-(g_faces[0]->size->metrics.descender >> 6));
-  if (asc_r <= 0) asc_r = (rpx * 4) / 5;
   int content_h = asc_r + desc_r;
   if (content_h <= 0) content_h = rpx;
   int top_pad = (line_h - content_h) / 2;

@@ -632,7 +632,6 @@ int main(void) {
 #ifdef __SWITCH__
   plInitialize(PlServiceType_User);
 #endif
-  gfx_init();
 
   SDL_SetMainReady();
   if (SDL_Init(SDL_INIT_AUDIO) < 0)
@@ -651,6 +650,7 @@ int main(void) {
   // engine renders into a reduced-size FBO and is upscaled at present. Must be
   // decided before nativeInit (the engine is told the internal size).
   ct_rescale_setup(screen_width, screen_height);
+  gfx_init();   // after egl_init: the font profile keys off the real panel size
 
   // --- load both modules: libc++_shared first so libchrono's std imports bind ---
 #ifdef __SWITCH__
