@@ -103,18 +103,25 @@ typedef struct {
   //                     with panel/design_scale, so the scene scale is exactly
   //                     design_scale on both axes (stock: 568x320 / 480x360 ...,
   //                     never an integer multiple of any panel).
-  //   design_scale   -- panel px per design unit. 0 = auto: floor(panel_w/640),
-  //                     min 1 -> 1 on 640x480, 2 on 1280x720, 3 on 1080p.
+  //   design_scale   -- panel px per design unit. 0 = auto: wide panels a
+  //                     whole multiple of the 640-wide canvas (2 at 720p, 3 at
+  //                     1080p; under 1280 the fraction panel_w/640), narrow
+  //                     panels panel_w/480 = the engine's own 4:3 layout (1.333
+  //                     on 640x480). The engine's frame (render_scale) does not
+  //                     change the design box, only the scene scale.
   //   game_area_width_fix -- ctr::gameArea width adaptive (hard-coded 568.0 in
   //                     stock); no-op at the stock design, required with ui_scale_fix.
   //   field_zoom_fix -- square, integer field art pixels: the fieldmap node's
   //                     setScale(1.875, 1.66667) becomes (z, z) and the view /
   //                     camera-limit sizes follow 1/z so the drawn view still
   //                     fills the canvas. Panel px per art px = z * design_scale.
-  //   field_zoom     -- z. 0 = auto: the smallest integer panel-px size whose
-  //                     visible rows fit the engine's fixed 432x224 field plane
-  //                     (<= 220 rows): 3 px on 640x480, 4 px at 720p (ct_nx).
-  //   map_zoom_fix / map_zoom -- world-map counterpart; map_zoom 0 = field_zoom.
+  //   field_zoom     -- z. 0 = auto (panel px per art px): wide panels the
+  //                     smallest whole size whose rows fit the engine's 432x224
+  //                     field plane (4 px at 720p, ct_nx); narrow panels the
+  //                     SNES's 256 columns on screen (2 px on 640x480, the
+  //                     224-row picture letterboxed evenly).
+  //   map_zoom_fix / map_zoom -- world-map counterpart; map_zoom 0 = auto: the
+  //                     field size capped so the 256-column map window fits.
   int   ui_scale_fix;
   float design_scale;
   int   game_area_width_fix;

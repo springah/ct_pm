@@ -178,6 +178,7 @@ void gfx_init(void) {
   { const char *s = getenv("CT_FONT_SNAP"); if (s) snap = atoi(s); }
   if (snap == 0) snap = narrow ? 1 : 2;
   g_snap = (snap == 1 || snap == 2) ? snap : 0;
+  if (g_snap == 2 && (g_font_grid & 1)) g_snap = 1;   // half of an odd grid is off-grid: whole steps only
   fprintf(stderr, "gfx: %d font face(s) (%s), pixel grid %d px/em, %s panel, font_snap %d, font_scale %g\n",
           g_face_count, primary ? primary : "none", g_font_grid, narrow ? "narrow" : "wide",
           g_snap, (double)g_font_scale);
@@ -212,7 +213,9 @@ static FT_Face load_glyph(uint32_t cp, int px) {
     if (FT_Get_Char_Index(g_faces[i], cp) == 0 && cp != ' ')
       continue;
     FT_Set_Pixel_Sizes(g_faces[i], 0, px);
-    if (FT_Load_Char(g_faces[i], cp, glyph_load_flags(px)) == 0)
+    // the pixel-font treatment (unhinted on-grid render) is for the primary
+    // face only; fallback outline faces (CJK) render normally
+    if (FT_Load_Char(g_faces[i], cp, i == 0 ? glyph_load_flags(px) : FT_LOAD_RENDER) == 0)
       return g_faces[i];
   }
   // last resort: render with the primary face's notdef
@@ -244,13 +247,18 @@ static Glyph g_gcache[GCACHE_SIZE];
 // px (a regular 1-2-1-2 pattern; a 2-px stroke lands on exactly 3). For
 // ChronoType, whose strokes are 2 px on its grid, this is pixel-exact.
 static int half_step_px(int px) {
-  extern Config config;
   return g_font_grid > 0 && g_snap == 2 &&
          (px % g_font_grid) != 0 && (px % (g_font_grid / 2)) == 0;
 }
 
+// Does the primary (pixel) face have this codepoint? Codepoints served by a
+// fallback outline face (CJK) must not go through the half-step decimation:
+// point-sampling an anti-aliased bitmap drops strokes.
+static int primary_has(uint32_t cp) {
+  return g_face_count > 0 && (cp == ' ' || FT_Get_Char_Index(g_faces[0], cp) != 0);
+}
+
 static const Glyph *get_glyph(uint32_t cp, int px) {
-  extern Config config;
   uint32_t idx = (cp * 2654435761u + (uint32_t)px * 2246822519u) & (GCACHE_SIZE - 1);
   Glyph *e = &g_gcache[idx];
   if (e->valid && e->cp == cp && e->px == px)
@@ -258,7 +266,7 @@ static const Glyph *get_glyph(uint32_t cp, int px) {
   if (e->buf) { free(e->buf); e->buf = NULL; }  // evict any prior occupant
   e->valid = 1; e->cp = cp; e->px = px;
   e->adv = e->left = e->top = e->w = e->rows = 0;
-  const int half = half_step_px(px);
+  const int half = half_step_px(px) && primary_has(cp);
   FT_Face f = load_glyph(cp, half ? px * 2 : px); // the one FreeType render, on miss
   if (f) {
     FT_GlyphSlot sl = f->glyph;
@@ -267,6 +275,11 @@ static const Glyph *get_glyph(uint32_t cp, int px) {
     e->top  = sl->bitmap_top;
     e->w    = (int)sl->bitmap.width;
     e->rows = (int)sl->bitmap.rows;
+    if (half) {                                   // 2x render -> device metrics (spaces too)
+      e->adv  = (e->adv + 1) / 2;
+      e->left = e->left / 2;
+      e->top  = (e->top + 1) / 2;
+    }
     if (e->w > 0 && e->rows > 0) {
       if (!half) {
         e->buf = (unsigned char *)malloc((size_t)e->w * e->rows);
@@ -284,9 +297,6 @@ static const Glyph *get_glyph(uint32_t cp, int px) {
             for (int x = 0; x < W; x++)
               e->buf[(size_t)y * W + x] = sl->bitmap.buffer[(size_t)(2 * y) * pitch + 2 * x];
           e->w = W; e->rows = R;
-          e->adv  = (e->adv + 1) / 2;
-          e->left = e->left / 2;
-          e->top  = (e->top + 1) / 2;
         } else { e->w = e->rows = 0; }
       }
     }

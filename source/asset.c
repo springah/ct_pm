@@ -178,9 +178,13 @@ void *AAssetManager_open_fake(void *mgr, const char *path, int mode) {
       // that copied the files flat (the beta.6-9 turnkey bundles did) returns an
       // empty shader source, the field-map program never links and every field
       // renders black. Retry on the basename before giving up.
+      // Only for paths under ASSETS_DIR: resolve() passes absolute / device
+      // paths (the writable dir's saves, prefs) through verbatim, and those
+      // must fail cleanly rather than pick up a same-named asset.
       const char *slash = strrchr(real, '/');
       const char *dir_end = real + strlen(ASSETS_DIR);
-      if (slash && slash > dir_end) {
+      const int under_assets = strncmp(real, ASSETS_DIR "/", strlen(ASSETS_DIR) + 1) == 0;
+      if (under_assets && slash && slash > dir_end) {
         char flat[1024];
         snprintf(flat, sizeof(flat), "%s/%s", ASSETS_DIR, slash + 1);
         f = fopen(flat, "rb");

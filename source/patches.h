@@ -872,6 +872,22 @@ static uint32_t encode_bl(uintptr_t from, uintptr_t to) { // bl <to> (+-128MB)
   return 0x94000000u | (uint32_t)((off / 4) & 0x3FFFFFF);
 }
 static uint32_t f32_bits(float v) { union { float f; uint32_t u; } x; x.f = v; return x.u; }
+// Cave word emitters. A branch encodes the distance from its OWN address, so
+// that address is taken before n advances -- `w[n++] = encode_b(.. n * 4 ..)`
+// reads and modifies n in one expression, which is undefined behaviour.
+static void cave_word(uint32_t *w, int *n, uint32_t word) { w[(*n)++] = word; }
+static void cave_b(uint32_t *w, int *n, uintptr_t cave, uintptr_t to) {
+  const uintptr_t at = cave + (uintptr_t)(*n) * 4; w[(*n)++] = encode_b(at, to);
+}
+static void cave_bl(uint32_t *w, int *n, uintptr_t cave, uintptr_t to) {
+  const uintptr_t at = cave + (uintptr_t)(*n) * 4; w[(*n)++] = encode_bl(at, to);
+}
+static void cave_fmov_imm(uint32_t *w, int *n, int sreg, float v) {   // s<sreg> = v via w16
+  const uint32_t b = f32_bits(v);
+  cave_word(w, n, movz_w(16, (uint16_t)(b & 0xffff)));
+  cave_word(w, n, movk_w_hi(16, (uint16_t)(b >> 16)));
+  cave_word(w, n, fmov_s_from_w(sreg, 16));
+}
 // Nearest float representable in a movz top-16 immediate (7 mantissa bits).
 static float rn16(float f) {
   union { float f; uint32_t u; } x; x.f = f;
@@ -952,9 +968,12 @@ static void apply_field_view_zoom(so_module *mod, float zoom, float design_h) {
 
   const float density_v = rn16(viewH * (320.0f / design_h));
   const float conv_h    = rn16(480.0f / zoom);
-  // K site: only meaningful when the canvas is taller than the 320 the formula
-  // subtracts; at 360 this is ct_nx's 8*(viewH-192).
-  const int   have_k    = design_h > 321.0f;
+  // K site: the engine computes K = (visibleH - 320) * C / 320 with its own
+  // /320 literal, so C = (viewH-192)*320/(designH-320) -- negative below 320
+  // (a 320x240 design wants -112), which encodes and propagates fine. Only a
+  // canvas of exactly 320 rows is skipped: there K is 0 whatever C is, and
+  // the solve divides by zero. At 360 this is ct_nx's 8*(viewH-192).
+  const int   have_k    = fabsf(design_h - 320.0f) > 1.0f;
   const float kscale_v  = have_k ? rn16((viewH - 192.0f) * 320.0f / (design_h - 320.0f)) : 192.0f;
 
   const PatchEntry e[3] = {
@@ -966,6 +985,7 @@ static void apply_field_view_zoom(so_module *mod, float zoom, float design_h) {
       "setScrollLimit: Y-limit overhang scale 192 -> (viewH-192)*320/(designH-320)" },
   };
   apply_patches(mod, e, have_k ? 3 : 2);
+  if (!have_k) debugPrintf("patches: field view zoom: K site left stock (design height == 320)\n");
 }
 
 // field_zoom_fix, blit part: FieldMap::makeField's fieldmap-node setScale(x, y)
@@ -1124,24 +1144,19 @@ static void apply_map_minimap_anchor(so_module *mod, float stock_x, float node_x
   const uint32_t CAVE = 0xd0218;                 // inside the 808-byte zero block, past the text caves
   const uint32_t SETPOSX = 0x889058;             // cocos2d::Node::setPositionX(float)
   const uint32_t ENTER = 0x60a2b4, EXIT = 0x609c24;   // both: ldr x8,[x0] with x0 = the node
-  const uint32_t sb = f32_bits(stock_x), nb = f32_bits(node_x);
   uint32_t w[24]; int n = 0, off_exit;           // 8 + 9 words used
   // enter: node X -> stock_x
   w[n++] = 0xaa0003f5u;                          // mov x21, x0
-  w[n++] = movz_w(16, (uint16_t)(sb & 0xffff));
-  w[n++] = movk_w_hi(16, (uint16_t)(sb >> 16));
-  w[n++] = fmov_s_from_w(0, 16);
-  w[n++] = encode_bl(base + CAVE + n * 4, base + SETPOSX);
+  cave_fmov_imm(w, &n, 0, stock_x);
+  cave_bl(w, &n, base + CAVE, base + SETPOSX);
   w[n++] = 0xaa1503e0u;                          // mov x0, x21
   w[n++] = 0xf9400008u;                          // ldr x8, [x0]
-  w[n++] = encode_b(base + CAVE + n * 4, base + ENTER + 4);
+  cave_b(w, &n, base + CAVE, base + ENTER + 4);
   // exit: node X -> node_x
   off_exit = n * 4;
   w[n++] = 0xaa0003f6u;                          // mov x22, x0
-  w[n++] = movz_w(16, (uint16_t)(nb & 0xffff));
-  w[n++] = movk_w_hi(16, (uint16_t)(nb >> 16));
-  w[n++] = fmov_s_from_w(0, 16);
-  w[n++] = encode_bl(base + CAVE + n * 4, base + SETPOSX);
+  cave_fmov_imm(w, &n, 0, node_x);
+  cave_bl(w, &n, base + CAVE, base + SETPOSX);
   w[n++] = 0xaa1603e0u;                          // mov x0, x22
   // w9 was loaded one word before the site and is consumed by the setScale
   // after it; the call clobbered it. Re-issue whatever instruction sits there
@@ -1150,7 +1165,7 @@ static void apply_map_minimap_anchor(so_module *mod, float stock_x, float node_x
   // the separately scaled clouds left).
   __builtin_memcpy(&w[n], (const void *)(base + EXIT - 4), 4); n++;
   w[n++] = 0xf9400008u;                          // ldr x8, [x0]
-  w[n++] = encode_b(base + CAVE + n * 4, base + EXIT + 4);
+  cave_b(w, &n, base + CAVE, base + EXIT + 4);
   const uint8_t *cur = (const uint8_t *)(base + CAVE);
   for (int i = 0; i < n * 4; i++)
     if (cur[i]) {
@@ -1228,29 +1243,22 @@ static void apply_text_scale_fix(so_module *mod, float design_scale) {
   const uint32_t SETSCALE = 0x888ebc;            // cocos2d::Node::setScale(float)
   uint32_t w[40]; int n = 0;
   uint32_t off1, off2, off3, off4;
-  const uint32_t fb = f32_bits(design_scale), kb = f32_bits(k);
   // cave 1: s1 = design_scale; back to 0x93a328
   off1 = n * 4;
-  w[n++] = movz_w(16, (uint16_t)(fb & 0xffff));
-  w[n++] = movk_w_hi(16, (uint16_t)(fb >> 16));
-  w[n++] = fmov_s_from_w(1, 16);
-  w[n++] = encode_b(base + CAVE + n * 4, base + 0x93a328);
+  cave_fmov_imm(w, &n, 1, design_scale);
+  cave_b(w, &n, base + CAVE, base + 0x93a328);
   // cave 2: x0 = sprite -> setScale(k); restore x0; replaced `ldr x8,[x0]`; back to 0x86af44
   off2 = n * 4;
   w[n++] = 0xaa0003f5u;                          // mov x21, x0
-  w[n++] = movz_w(16, (uint16_t)(kb & 0xffff));
-  w[n++] = movk_w_hi(16, (uint16_t)(kb >> 16));
-  w[n++] = fmov_s_from_w(0, 16);
-  w[n++] = encode_bl(base + CAVE + n * 4, base + SETSCALE);
+  cave_fmov_imm(w, &n, 0, k);
+  cave_bl(w, &n, base + CAVE, base + SETSCALE);
   w[n++] = 0xaa1503e0u;                          // mov x0, x21
   w[n++] = 0xf9400008u;                          // ldr x8, [x0]
-  w[n++] = encode_b(base + CAVE + n * 4, base + 0x86af44);
+  cave_b(w, &n, base + CAVE, base + 0x86af44);
   // cave 3: x0 = &sprite content size -> label->setContentSize(size * k); back to 0x86afb8
   off3 = n * 4;
   w[n++] = 0x2d400400u;                          // ldp s0, s1, [x0]
-  w[n++] = movz_w(16, (uint16_t)(kb & 0xffff));
-  w[n++] = movk_w_hi(16, (uint16_t)(kb >> 16));
-  w[n++] = fmov_s_from_w(2, 16);
+  cave_fmov_imm(w, &n, 2, k);
   w[n++] = 0x1e220800u;                          // fmul s0, s0, s2
   w[n++] = 0x1e220821u;                          // fmul s1, s1, s2
   w[n++] = 0xd10043ffu;                          // sub sp, sp, #16
@@ -1261,15 +1269,13 @@ static void apply_text_scale_fix(so_module *mod, float design_scale) {
   w[n++] = 0xf940b108u;                          // ldr x8, [x8, #352]  (setContentSize slot)
   w[n++] = 0xd63f0100u;                          // blr x8
   w[n++] = 0x910043ffu;                          // add sp, sp, #16
-  w[n++] = encode_b(base + CAVE + n * 4, base + 0x86afb8);
+  cave_b(w, &n, base + CAVE, base + 0x86afb8);
   // cave 4: shadow sprite: replaced `str x0,[x19,#968]`, setScale(k); back to 0x86ab40
   off4 = n * 4;
   w[n++] = 0xf901e660u;                          // str x0, [x19, #968]
-  w[n++] = movz_w(16, (uint16_t)(kb & 0xffff));
-  w[n++] = movk_w_hi(16, (uint16_t)(kb >> 16));
-  w[n++] = fmov_s_from_w(0, 16);
-  w[n++] = encode_bl(base + CAVE + n * 4, base + SETSCALE);
-  w[n++] = encode_b(base + CAVE + n * 4, base + 0x86ab40);
+  cave_fmov_imm(w, &n, 0, k);
+  cave_bl(w, &n, base + CAVE, base + SETSCALE);
+  cave_b(w, &n, base + CAVE, base + 0x86ab40);
   // the cave must be untouched zero bytes
   const uint8_t *cur = (const uint8_t *)(base + CAVE);
   for (int i = 0; i < n * 4; i++)
@@ -1297,19 +1303,28 @@ static void apply_text_scale_fix(so_module *mod, float design_scale) {
 // internal FBO when render_scale < 1, else the panel).
 typedef struct {
   int   frame_w, frame_h;
-  float design_scale, design_w, design_h;
+  float panel_scale;                 // panel px per design unit (the rules' scale)
+  float design_scale, design_w, design_h;   // frame px per design unit; the design box
   float field_zoom, map_zoom;
 } CtFraming;
 
 static CtFraming ct_framing_resolve(void) {
   extern Config config;
   CtFraming f;
-  int fw = screen_width, fh = screen_height;
+  // The rules key off the PANEL; the engine renders into the frame (the panel,
+  // or the reduced FBO when render_scale < 1). Deriving the design from the
+  // frame made render_scale 0.75 at 720p resolve to a 960x540 design at scale
+  // 1 -- the whole UI a third smaller -- so the design box is chosen for the
+  // panel and the frame just carries a proportionally smaller scene scale.
+  int pw = screen_width, ph = screen_height;
+  if (pw <= 0) pw = 1280;
+  if (ph <= 0) ph = 720;
+  int fw = pw, fh = ph;
 #ifndef __SWITCH__
   ct_rescale_engine_size(&fw, &fh);
 #endif
-  if (fw <= 0) fw = 1280;
-  if (fh <= 0) fh = 720;
+  if (fw <= 0) fw = pw;
+  if (fh <= 0) fh = ph;
   f.frame_w = fw; f.frame_h = fh;
   // Auto design scale. Wide panels: an integer multiple of the 640-wide 16:9
   // canvas (1280x720 -> 2, 640x360 exact). Narrow panels (4:3, 1:1): the
@@ -1318,34 +1333,47 @@ static CtFraming ct_framing_resolve(void) {
   // the RG40XX-H; rejected). 640x480 -> 1.333 (design 480x360, stock UI size),
   // 720x720 -> 1.5, 1024x768 -> 2.133. Field/map art stays integer regardless
   // (field_zoom auto compensates), only UI sprites carry the fractional scale.
-  float s = config.design_scale;
+  float s = config.design_scale;                 // panel px per design unit
+  const float aspect = (float)pw / (float)ph;
   if (s <= 0.0f) {
-    const float aspect = (float)fw / (float)fh;
-    if (aspect >= 1.6f) s = floorf((float)fw / 640.0f);
-    else                s = (float)fw / 480.0f;
-    if (s < 1.0f) s = 1.0f;
+    if (aspect >= 1.6f) {
+      // Wide: a whole multiple of the 640-wide canvas (1280x720 -> 2, 1080p ->
+      // 3). Under 1280 the floor would be 1 = a canvas the size of the panel,
+      // UI at ~59% of stock on a 960x544 -- so take the fraction instead
+      // (960 -> 1.5, 854 -> 1.33: UI within ~10% of stock, the same trade
+      // narrow panels make).
+      s = floorf((float)pw / 640.0f);
+      if (s < 2.0f) s = (float)pw / 640.0f;
+    } else {
+      s = (float)pw / 480.0f;
+      if (s < 1.0f) s = 1.0f;
+    }
   }
-  f.design_scale = s;
-  f.design_w = (float)fw / s;
-  f.design_h = (float)fh / s;
+  if (s < 0.05f) s = 0.05f;
+  // The table stamp holds movz top-16 floats: snap the design size to what the
+  // engine will actually see, so every anchor below works from the same box.
+  f.design_w = rn16((float)pw / s);
+  f.design_h = rn16((float)ph / s);
+  f.panel_scale  = s;
+  f.design_scale = (float)fw / f.design_w;       // frame px per design unit (== s at native)
   float z = config.field_zoom;
   if (z <= 0.0f) {
-    float p;
-    if ((float)fw / (float)fh >= 1.6f) {
+    float p;                                     // panel px per art px
+    if (aspect >= 1.6f) {
       // Wide panels: the smallest whole px/art whose rows fit the 432x224
       // plane (720p -> 4 px, 320x180 art: the ct_nx look).
-      p = ceilf((float)fh / 220.0f);
+      p = ceilf((float)ph / 220.0f);
     } else {
       // Narrow panels: the SNES's 256 columns on screen (640 -> 2 px, 1024 ->
       // 4 px), bumped only if that would ask for more than a 240-row picture
       // (720x720 -> 3 px). 3 px on 640x480 showed 213x160 -- too little room
-      // (user, RG40XX-H); 2 px shows 320x220 with 20 px letterbox bars.
-      p = floorf((float)fw / 256.0f);
+      // (user, RG40XX-H); 2 px shows 320x220 with 16 px letterbox bars.
+      p = floorf((float)pw / 256.0f);
       if (p < 1.0f) p = 1.0f;
-      while ((float)fh / p > 240.0f) p += 1.0f;
+      while ((float)ph / p > 240.0f) p += 1.0f;
     }
     if (p < 1.0f) p = 1.0f;
-    z = p / s;
+    z = p / s;                                   // node zoom is in design units: frame-independent
   }
   f.field_zoom = z;
   // Auto map zoom: same px/art as the field, but capped so the SNES 256-column
@@ -1357,7 +1385,7 @@ static CtFraming ct_framing_resolve(void) {
   // 1280x720 -> 4 px, 640x360 -> 2 px (unchanged).
   float mz = config.map_zoom;
   if (mz <= 0.0f) {
-    float pm = floorf((float)fw / 256.0f);
+    float pm = floorf((float)pw / 256.0f);
     const float pf = z * s;
     if (pm < 1.0f) pm = 1.0f;
     if (pm > pf) pm = pf;
@@ -1401,11 +1429,11 @@ static inline void apply_game_patches(so_module *mod) {
   // and the zoomed view no longer matches the canvas -- so they are gated on it.
   if (config.ui_scale_fix || config.field_zoom_fix || config.map_zoom_fix || config.game_area_width_fix) {
     const CtFraming fr = ct_framing_resolve();
-    fprintf(stderr, "ct: framing: frame %dx%d design %gx%g (scale %g) field_zoom %g "
+    fprintf(stderr, "ct: framing: frame %dx%d design %gx%g (scale %g, panel %g) field_zoom %g "
                     "(%g px/art, %gx%g art visible) map_zoom %g%s\n",
             fr.frame_w, fr.frame_h, (double)fr.design_w, (double)fr.design_h,
-            (double)fr.design_scale, (double)fr.field_zoom,
-            (double)(fr.field_zoom * fr.design_scale),
+            (double)fr.design_scale, (double)fr.panel_scale, (double)fr.field_zoom,
+            (double)(fr.field_zoom * fr.panel_scale),
             (double)(fr.design_w / fr.field_zoom), (double)(fr.design_h / fr.field_zoom),
             (double)fr.map_zoom, config.ui_scale_fix ? "" : " [ui_scale_fix off: zoom patches skipped]");
     // UI font size: config font_scale, else auto by panel (see config.h).

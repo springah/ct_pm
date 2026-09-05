@@ -112,7 +112,8 @@ noticeably smoother once it is warm. If heavy scenes still dip on a weak GPU,
 
 ## Configuration
 
-`config.txt` (created on first run):
+`config.txt` (created on first run; keys added by a newer build are appended, with their
+defaults, on the next launch):
 * `screen_width` / `screen_height` — `-1` = panel default.
 * `language` — in-game text/UI localization; the game ships all nine under
   `Localize/<code>/`. One of `en fr de it es ja ko zh` (`zh-Hant` / `zh_TW` = Traditional
