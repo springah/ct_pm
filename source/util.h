@@ -13,6 +13,13 @@
 
 int debugPrintf(char *text, ...);
 
+#ifndef __SWITCH__
+// glibc has no strlcpy; portmaster/compat_libc.c provides it (newlib declares
+// its own in <string.h>).
+#include <stddef.h>
+size_t strlcpy(char *dst, const char *src, size_t size);
+#endif
+
 void cpu_boost(int on);
 
 // libff4.so reads its stack-protector canary from tpidr_el0 + 0x28.

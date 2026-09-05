@@ -304,7 +304,7 @@ void jni_ime_service(void) {
       swkbdConfigSetInitialText(&kbd, eb->text);
     swkbdConfigSetStringLenMax(&kbd, eb->maxlen > 0 ? (u32)eb->maxlen : 64);
     if (R_SUCCEEDED(swkbdShow(&kbd, out, sizeof(out))))
-      snprintf(eb->text, sizeof(eb->text), "%s", out);
+      strlcpy(eb->text, out, sizeof(eb->text));   // the edit box is 512; the keyboard buffer 1024
     swkbdClose(&kbd);
   }
 
@@ -409,16 +409,6 @@ static int create_text_bitmap(va_list va) {
   if (!g_bitmap_cb || !text || text->tag != TAG_PRIARR)
     return 0;
 
-  // Surface what the engine actually requests for the first few labels, so a
-  // device log tells us whether the drop-shadow is engine-driven (auto) or
-  // needs CT_TEXT_SHADOW=force.
-  static int dbg_shadow_n = 0;
-  if (dbg_shadow_n < 12) {
-    debugPrintf("ct: text shadow=%d dx=%.1f dy=%.1f op=%.2f size=%d\n",
-                shadow, shadowDX, shadowDY, shadowOpacity, fontSize);
-    dbg_shadow_n++;
-  }
-
   // byte[] is UTF-8 text without a NUL; copy and terminate
   char *str = malloc((size_t)text->len + 1);
   if (!str) return 0;
@@ -430,15 +420,17 @@ static int create_text_bitmap(va_list va) {
                                              align & 0x0F, width, height, wrap,
                                              shadow, shadowDX, shadowDY, shadowOpacity,
                                              &w, &h);
-  { // log each distinct (size, box) request once: which sizes the UI actually uses
+  { // Log each distinct (size, box) request once -- the sizes the UI actually
+    // uses on this panel, and what we handed back -- so a device log.txt shows
+    // how the font profile landed (see gfx.c). Also the engine's shadow request.
     static int seen_size[12], seen_w[12], seen_h[12], n = 0;
     int dup = 0;
     for (int i = 0; i < n; i++)
       if (seen_size[i] == fontSize && seen_w[i] == width && seen_h[i] == height) { dup = 1; break; }
     if (!dup && n < 12 && rgba) {
       seen_size[n] = fontSize; seen_w[n] = width; seen_h[n] = height; n++;
-      fprintf(stderr, "ct: text \"%.24s\" size %d box %dx%d align %d wrap %d -> bitmap %dx%d\n",
-              str, fontSize, width, height, align, wrap, w, h); } }
+      fprintf(stderr, "ct: text \"%.24s\" size %d box %dx%d align %d wrap %d shadow %d -> bitmap %dx%d\n",
+              str, fontSize, width, height, align, wrap, shadow, w, h); } }
   free(str);
   if (!rgba) return 0;
 

@@ -12,6 +12,7 @@
 #include <ctype.h>
 
 #include "config.h"
+#include "util.h"   // strlcpy prototype on glibc
 
 #define CONFIG_VARS \
   CONFIG_VAR_INT(screen_width); \

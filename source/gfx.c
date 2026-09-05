@@ -362,6 +362,20 @@ static void draw_line_glyphs(unsigned char *out, int W, int H,
   }
 }
 
+// Glyph metrics at the (possibly snapped) render size, and the line cell that
+// holds them: the engine's requested cell, grown when a size snapped UP past
+// the request (16 -> 20 px) has taller glyphs than that cell -- else the
+// descenders are clipped (PixelMplus10: 19-row cell, 22-row glyphs, the y/g
+// tails cut off).
+static int snapped_cell(int rpx, int line_h_req, int *asc, int *desc) {
+  FT_Set_Pixel_Sizes(g_faces[0], 0, rpx);
+  *asc  = (int)(g_faces[0]->size->metrics.ascender >> 6);
+  *desc = (int)(-(g_faces[0]->size->metrics.descender >> 6));
+  if (*asc <= 0) *asc = (rpx * 4) / 5;
+  if (*asc + *desc <= 0) *asc = rpx;
+  return (line_h_req > *asc + *desc) ? line_h_req : *asc + *desc;
+}
+
 unsigned char *gfx_render_text_rgba(const char *text, int font_size,
                                     int r, int g, int b, int a,
                                     int align_h, int max_w, int max_h, int wrap,
@@ -389,8 +403,8 @@ unsigned char *gfx_render_text_rgba(const char *text, int font_size,
   // fit at that size, step down a multiple (a narrow stat cell gets 1x while a
   // wide button or dialog line keeps 2x).
   const int snap = (g_font_grid > 0 && g_snap);
-  // step = the grid (mode 1: 1x, 2x, 3x ...) or half of it (modes 2/3: also
-  // 1.5x, 2.5x ... via the double-render-and-halve path in get_glyph).
+  // step = the grid (mode 1: 1x, 2x, 3x ...) or half of it (mode 2: also
+  // 1.5x, 2.5x ... via the double-render-and-decimate path in get_glyph).
   // Nearest step, ties up: the engine's sizes sit between clean ones (16 / 21 /
   // 29 px on 640x480), and flooring put the 21 px dialogue a whole step below
   // the 16 px labels' ratio (or, scaled x1.5, a step above: 32 px overflowed
@@ -412,21 +426,9 @@ unsigned char *gfx_render_text_rgba(const char *text, int font_size,
   if (line_h <= 0) line_h = px + px / 4;
   if (ascender <= 0) ascender = (px * 4) / 5;
 
-  // Glyph cell for the (possibly snapped) render size: a size snapped UP past
-  // the engine's request (16 -> 20 px) has taller glyphs than the engine's
-  // line cell, so the cell grows to fit -- else descenders are clipped (seen
-  // with PixelMplus10: 19-row cell, 22-row glyphs, the y/g tails cut off).
-  #define SNAPPED_CELL(rpx_, out_asc, out_desc, out_line_h) do {                 \
-    FT_Set_Pixel_Sizes(g_faces[0], 0, (rpx_));                                  \
-    (out_asc)  = (int)(g_faces[0]->size->metrics.ascender >> 6);               \
-    (out_desc) = (int)(-(g_faces[0]->size->metrics.descender >> 6));           \
-    if ((out_asc) <= 0) (out_asc) = ((rpx_) * 4) / 5;                           \
-    if ((out_asc) + (out_desc) <= 0) (out_asc) = (rpx_);                        \
-    (out_line_h) = (line_h_req > (out_asc) + (out_desc)) ? line_h_req : (out_asc) + (out_desc); \
-  } while (0)
   const int line_h_req = line_h;
   int asc_r = 0, desc_r = 0;
-  SNAPPED_CELL(rpx, asc_r, desc_r, line_h);
+  line_h = snapped_cell(rpx, line_h_req, &asc_r, &desc_r);
 
   // split into lines on '\n'; optionally greedy-wrap to max_w
   // (we collect line start/end byte ranges)
@@ -474,7 +476,7 @@ unsigned char *gfx_render_text_rgba(const char *text, int font_size,
         ((max_w > 0 && meas_w > max_w) || (max_h > 0 && nlines * line_h > max_h))) {
       k--;
       rpx = k * step;
-      SNAPPED_CELL(rpx, asc_r, desc_r, line_h);
+      line_h = snapped_cell(rpx, line_h_req, &asc_r, &desc_r);
       continue;
     }
     break;
@@ -484,7 +486,6 @@ unsigned char *gfx_render_text_rgba(const char *text, int font_size,
 
   // snapped-size glyph metrics (asc_r/desc_r), for vertical centring within
   // each line cell
-  FT_Set_Pixel_Sizes(g_faces[0], 0, rpx);
   int content_h = asc_r + desc_r;
   if (content_h <= 0) content_h = rpx;
   int top_pad = (line_h - content_h) / 2;

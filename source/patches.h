@@ -793,8 +793,10 @@ static const PatchEntry g_diagonal_patches[] = {
 
 // ---------------------------------------------------------------------------
 // 5.  Framing cluster: ui_scale_fix / game_area_width_fix / field_zoom_fix /
-//     map_zoom_fix.  Ported from ct_nx (patches.h sections 7-9 + map_zoom) and
-//     generalised from the Switch's fixed 640x360 canvas to any panel.
+//     map_zoom_fix (+ map_minimap_fix) / text_scale_fix.  Ported from ct_nx
+//     (patches.h sections 7-9 + map_zoom) and generalised from the Switch's
+//     fixed 640x360 canvas to any panel; text_scale_fix and the minimap anchor
+//     are new here (4:3 panels only ever needed them).
 //
 //     WHY. libchrono has no single design resolution: a static initialiser at
 //     0x641c00.. builds an aspect-bucketed table -- 568x320 (16:9), 480x360
@@ -811,9 +813,11 @@ static const PatchEntry g_diagonal_patches[] = {
 //       ui_scale_fix   -- stamp EVERY table entry with (panel / design_scale)
 //                         so the scene scale is exactly design_scale on both
 //                         axes, whatever the runtime picker chooses.
-//                         design_scale auto = floor(panel_w / 640), min 1:
-//                         640x480 -> 1 (design 640x480), 1280x720 -> 2
-//                         (640x360, the ct_nx value), 1920x1080 -> 3.
+//                         design_scale auto: wide panels floor(panel_w / 640)
+//                         (1280x720 -> 2 = 640x360, the ct_nx value; 1080p ->
+//                         3); narrow panels panel_w / 480 -- the engine's own
+//                         4:3 layout (640x480 -> 1.333 = 480x360; a 1:1 canvas
+//                         left its 480-wide menus centred in dead space).
 //       game_area_width_fix -- ctr::gameArea's width is a hard-coded 568.0
 //                         (its height is adaptive); make the width adaptive
 //                         too. A proven no-op at the stock 568 design.
@@ -822,13 +826,21 @@ static const PatchEntry g_diagonal_patches[] = {
 //                         densities follow 1/z so the drawn view still covers
 //                         exactly the design canvas; the node is re-anchored to
 //                         the canvas centre. Panel px per art px = z *
-//                         design_scale. Auto z picks the smallest integer
-//                         panel-px size p whose visible rows (panel_h / p) fit
-//                         the engine's fixed 432x224 field RenderTexture
-//                         (<= 220 rows): 640x480 -> 3 px (213x160 art visible),
-//                         720p -> 4 px (320x180, ct_nx's shipped framing).
+//                         design_scale. Auto p (panel px per art px): wide
+//                         panels take the smallest whole p whose rows fit the
+//                         engine's fixed 432x224 field RenderTexture (720p ->
+//                         4 px, 320x180 art: ct_nx's shipped framing); narrow
+//                         panels show the SNES's 256 columns, floor(panel_w /
+//                         256) bumped while rows > 240 (640x480 -> 2 px,
+//                         320x220 art, the 224-row picture letterboxed evenly).
 //       map_zoom_fix   -- the same for the WorldMap node (four setScale sites)
-//                         plus its anchor.
+//                         plus its anchor; p capped so the 256-column SNES map
+//                         window (the year plate lives inside it) fits the
+//                         panel. map_minimap_fix keeps the full-world overview
+//                         (the same node rescaled) at its stock X.
+//       text_scale_fix -- system-font labels drawn 1:1 (stock: rendered at
+//                         points x 2 and shrunk by 2 / design_scale -- 2/3 on
+//                         4:3). See its own header below.
 //
 //     Every site below is ct_nx's (same libchrono v2.1.5, same ISA; load_base
 //     == load_virtbase here, so raw vaddrs apply directly) and every old word
@@ -972,9 +984,11 @@ static void apply_field_zoom(so_module *mod, float zoom) {
 }
 
 // field_zoom_fix, anchor part: makeField's setPosition gets (designW/2 -
-// 128*zoom, 0) instead of the zoom-blind (ctr::x_offset, 0). Identity at the
-// stock zoom on a 640-wide canvas (80, 0). Y stays 0 -- every vertical node
-// shift ct_nx tried exposed unrendered plane rows; Y is handled by viewH above.
+// 128*zoom, y) instead of the zoom-blind (ctr::x_offset, 0). Identity at the
+// stock zoom on a 640-wide canvas (80, 0). Y is 0 while the 224-row plane
+// fills the canvas (the view limits above handle the rest); it only lifts the
+// node to centre the letterbox when the canvas wants more rows than the plane
+// holds (2 px on 640x480) -- see node_y below.
 // Only 2 of the 6 slots before the blr are free (x21 = &ctr::x_offset is read
 // again ~700 bytes later by an overlay node), so the X/Y loads go in a 20-byte
 // cave at 0x376394 (verified all-zero, R+X segment) reached by a branch.
@@ -1111,7 +1125,7 @@ static void apply_map_minimap_anchor(so_module *mod, float stock_x, float node_x
   const uint32_t SETPOSX = 0x889058;             // cocos2d::Node::setPositionX(float)
   const uint32_t ENTER = 0x60a2b4, EXIT = 0x609c24;   // both: ldr x8,[x0] with x0 = the node
   const uint32_t sb = f32_bits(stock_x), nb = f32_bits(node_x);
-  uint32_t w[16]; int n = 0, off_exit;
+  uint32_t w[24]; int n = 0, off_exit;           // 8 + 9 words used
   // enter: node X -> stock_x
   w[n++] = 0xaa0003f5u;                          // mov x21, x0
   w[n++] = movz_w(16, (uint16_t)(sb & 0xffff));
