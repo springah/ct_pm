@@ -82,18 +82,19 @@ section, milestone history, and the `os_*` abstraction map.
 ## Displays: what to expect
 
 The engine picks a design resolution per aspect ratio and scales it to whatever panel
-it is told. The 16:9 entry is **568×320**, so no common panel is an exact integer
-multiple of it — 720p works out to ~2.25×:
+it is told. Stock, the 16:9 entry is **568×320**, so no common panel is an exact integer
+multiple of it — 720p works out to ~2.25×. The framing cluster (see Configuration:
+`ui_scale_fix` / `field_zoom_fix` / `font_snap`, on by default) replaces that with an
+exact whole-number scale per panel:
 
-* **16:9 panels are its home turf, and 720p looks best in practice** — the adaptive
-  camera frames as intended and the defaults (native resolution + shader cache) give
-  the best look and feel this port can produce. The scale is still fractional, so
-  sprite pixels are not perfectly uniform; `force_nearest` is the lever for that.
-* **4:3 and other aspects work**, but are further off-design: the camera reframes
-  vertically and draws the art at a fractional zoom (~2.1–2.5× at 640×480), so
-  sprite pixels come out slightly uneven. That is the engine's own scaling, not the
-  port's — `render_scale`/`render_filter` cannot fix it, only soften (`0.75` +
-  `linear`) or expose (`1`) it.
+* **16:9 panels are its home turf, and 720p looks best in practice** — the canvas becomes
+  640×360 at exactly 2×, the field is drawn at 4×4 panel px per art px (320×180 art px
+  visible, the ct_nx Switch framing), and text lands on the pixel font's own grid.
+* **4:3 and other aspects work.** Stock, the engine draws the field at a fractional
+  zoom there (~2.5×2.2 panel px per art px at 640×480) and its pixel font off the
+  pixel grid, so everything looks slightly uneven; the framing cluster below
+  (`ui_scale_fix` + `field_zoom_fix` + `font_snap`, on by default) draws the field
+  at exact 3×3 panel px and the text on its native grid instead.
 * **Don't chase integer scaling on 480p panels** with `render_scale 0.5` +
   `render_filter nearest`: the engine scales its UI text down along with the art,
   and at 320×240 internal the text is unreadable.
@@ -149,14 +150,64 @@ instruction, so a different build safely skips them). Set `0` to disable any one
 * `controller_glyphs` — render `<BTN_*>` button prompts + bracketed glyphs.
 * `fix_diagonal_movement` — smooth the field diagonal-movement stutter.
 
+**Framing / scale** (`source/patches.h` section 5; the ct_nx framing cluster, generalised
+to any panel — these three are coupled, keep them together):
+* `ui_scale_fix` — **on**. The engine has no single design resolution: it picks from an
+  aspect-bucketed table (568×320, 480×360, …) that no handheld panel is an integer multiple
+  of, so every layer is drawn at a fractional scale (2.25× at 720p, 1.33× at 640×480).
+  Stamps the whole table with `panel / design_scale` so the scene scale is exact.
+* `design_scale` — panel pixels per design unit; `0` (default) = auto: wide panels get a
+  whole multiple of the 640-wide 16:9 canvas (**2** at 720p, **3** at 1080p); 4:3 and
+  squarer panels get the engine's own 480-wide 4:3 layout (**1.333** on 640×480, i.e. a
+  480×360 design — its menus are built for that box, so a 1:1 640×480 canvas leaves them
+  centred in dead space). Field and world-map art stay integer either way; only UI
+  sprites carry a fractional scale on 4:3.
+* `game_area_width_fix` — **on**. Makes `ctr::gameArea`'s hard-coded 568-wide rect adaptive;
+  a no-op at the stock design, required once `ui_scale_fix` changes it.
+* `field_zoom_fix` / `field_zoom` — **on** / `0` = auto. The field map node is normally
+  drawn at a fixed 1.875×1.667 art→design scale, so art pixels are neither square nor whole
+  (2.5×2.2 panel px at 640×480, 4.2×3.8 at 720p). With the fix the node is drawn at
+  `field_zoom × field_zoom` and the view/camera limits follow, so the visible map still fills
+  the screen. Panel px per art px = `field_zoom × design_scale`; auto picks the smallest
+  whole number whose visible rows fit the engine's fixed 432×224 field plane: **3 px** on
+  640×480 (213×160 art px visible), **4 px** at 720p (320×180). Lower = more map, smaller
+  art; only whole panel-px sizes stay shimmer-free. The 432×224 plane caps zoom-out: below
+  ~220 visible rows a black band appears at the top.
+* `map_zoom_fix` / `map_zoom` — **on** / `0` = auto. The world-map counterpart: same px per
+  art px as the field, capped so the SNES 256-column map window fits the panel width (the
+  year plate is a screen-fixed sprite inside that window and clips otherwise): **2 px** on
+  640×480 (`map_zoom 1.5`, and the map planes are wider than the SNES window, so it fills the
+  panel edge to edge), **4 px** at 720p, **2 px** at 640×360.
+* `text_scale_fix` — **on**. Draws system-font labels 1:1. The engine runs cocos2d with a
+  content scale factor of 2 (its art is @2x), so stock text is rendered at points × 2 and the
+  sprite drawn at design scale ÷ 2 — 1:1 at 720p, but **2/3 on a 4:3 panel**: a 24 px bitmap
+  nearest-squeezed to 16 px, which no glyph size survives. With the fix a 12-pt label is a
+  16 px bitmap drawn 16 px tall on 640×480 (four patched sites, no-op where design scale = 2).
+* `font_snap` — **on**. The bundled ChronoType is a pixel font on a 16 px/em grid and only
+  renders cleanly at 16/32/48 px; the engine's fractional scale asks for sizes like 20 or 13,
+  which put strokes on half pixels (alternating 1- and 2-px stems). Glyphs are rendered at
+  a clean size instead (line height unchanged), stepping down where the engine's box is
+  too narrow for the text (the HP/MP stat cells) so nothing clips. Modes: `1` = whole
+  multiples only (1×/2×/3×); `2` = half multiples too, so the 1.5× a 4:3 layout asks for
+  renders as a regular 1-2-1-2 px pattern (default); `3` = half multiples box-filtered
+  (soft, even edges); `0` = off. Env override `CT_FONT_SNAP`. Auto-detected from the
+  font's outlines, so a non-pixel `font.ttf` is left alone. Note ChronoType's strokes are
+  2 px wide on its grid, so modes 2 and 3 render identically for it.
+* `font_scale` — `0` = auto (**1.5**): 12-pt labels become 24 px on 640×480, i.e. 1.5×
+  ChronoType with 3 px strokes, the same scale as the 3 px/art field sprites (1× read as
+  tiny in dialogue). Any other value forces that scale; env `CT_FONT_SCALE` overrides.
+
+`log.txt` reports the resolved values on every launch
+(`ct: framing: frame 640x480 design 640x480 (scale 1) field_zoom 3 (3 px/art, …)`).
+
 **Input:**
 * `key_zl` / `key_zr` / `key_start` / `key_select` — remap the four extra buttons to any
   of `a b x y l r zl zr start select menu none`. Defaults map each to itself (stock).
 * `right_stick_mirror` — `1` (default) = the right stick also drives movement when the
   left stick is centred; `0` = left stick only.
 
-Launcher env overrides: `CT_FONT_SCALE` (UI font size; the binary's own default is `1.0`,
-and the launcher passes `1.5`), `CT_RENDER_SCALE` / `CT_RENDER_FILTER` / `CT_SHADER_CACHE`
+Launcher env overrides: `CT_FONT_SCALE` (UI font size, overrides the `font_scale` auto),
+`CT_RENDER_SCALE` / `CT_RENDER_FILTER` / `CT_SHADER_CACHE`
 (override their config keys), and `CT_TEXT_SHADOW` (`off` / `auto` / `force` /
 `dx,dy,opacity` — the SNES-style 1px drop-shadow is baked in otherwise).
 

@@ -31,7 +31,17 @@
   CONFIG_VAR_STR(key_zr); \
   CONFIG_VAR_STR(key_start); \
   CONFIG_VAR_STR(key_select); \
-  CONFIG_VAR_INT(right_stick_mirror);
+  CONFIG_VAR_INT(right_stick_mirror); \
+  CONFIG_VAR_INT(ui_scale_fix); \
+  CONFIG_VAR_FLOAT(design_scale); \
+  CONFIG_VAR_INT(game_area_width_fix); \
+  CONFIG_VAR_INT(field_zoom_fix); \
+  CONFIG_VAR_FLOAT(field_zoom); \
+  CONFIG_VAR_INT(map_zoom_fix); \
+  CONFIG_VAR_FLOAT(map_zoom); \
+  CONFIG_VAR_INT(font_snap); \
+  CONFIG_VAR_INT(text_scale_fix); \
+  CONFIG_VAR_FLOAT(font_scale);
 
 Config config;
 static int config_needs_rewrite = 0;
@@ -81,6 +91,17 @@ int read_config(const char *file) {
   strlcpy(config.key_start, "start", sizeof(config.key_start));
   strlcpy(config.key_select, "select", sizeof(config.key_select));
   config.right_stick_mirror = 1; // right stick mirrors movement (current behaviour)
+  // Framing cluster (patches.h section 5): on by default, auto-resolved per panel.
+  config.ui_scale_fix = 1;
+  config.design_scale = 0.0f;       // auto
+  config.game_area_width_fix = 1;
+  config.field_zoom_fix = 1;
+  config.field_zoom = 0.0f;         // auto
+  config.map_zoom_fix = 1;
+  config.map_zoom = 0.0f;           // auto = field_zoom
+  config.font_snap = 2;             // pixel-font glyphs on the grid, half steps allowed (gfx.c)
+  config.font_scale = 0.0f;         // auto (patches.h framing picks 1.0 / 1.5)
+  config.text_scale_fix = 1;        // labels drawn 1:1 (patches.h)
 
   FILE *f = fopen(file, "r");
   if (f == NULL)

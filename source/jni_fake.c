@@ -430,6 +430,15 @@ static int create_text_bitmap(va_list va) {
                                              align & 0x0F, width, height, wrap,
                                              shadow, shadowDX, shadowDY, shadowOpacity,
                                              &w, &h);
+  { // log each distinct (size, box) request once: which sizes the UI actually uses
+    static int seen_size[12], seen_w[12], seen_h[12], n = 0;
+    int dup = 0;
+    for (int i = 0; i < n; i++)
+      if (seen_size[i] == fontSize && seen_w[i] == width && seen_h[i] == height) { dup = 1; break; }
+    if (!dup && n < 12 && rgba) {
+      seen_size[n] = fontSize; seen_w[n] = width; seen_h[n] = height; n++;
+      fprintf(stderr, "ct: text \"%.24s\" size %d box %dx%d align %d wrap %d -> bitmap %dx%d\n",
+              str, fontSize, width, height, align, wrap, w, h); } }
   free(str);
   if (!rgba) return 0;
 

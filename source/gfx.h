@@ -14,6 +14,9 @@
 
 // must be called once after plInitialize(); loads the Switch shared fonts.
 void gfx_init(void);
+// UI font visual scale (config font_scale / framing auto). A CT_FONT_SCALE env
+// value seen by gfx_init wins over this.
+void gfx_set_font_scale(float scale);
 
 // horizontal alignment (cocos: low nibble of the alignment argument)
 #define GFX_ALIGN_LEFT   0

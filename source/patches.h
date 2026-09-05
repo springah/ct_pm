@@ -31,6 +31,12 @@
 #include <stdio.h>
 #include "so_util.h"
 #include "util.h"
+#include <math.h>
+#include "config.h"
+#include "gfx.h"
+#ifndef __SWITCH__
+#include "rescale.h"
+#endif
 
 // ---------------------------------------------------------------------------
 // Patch descriptor
@@ -785,6 +791,510 @@ static const PatchEntry g_diagonal_patches[] = {
   P_RAW(0x5a15f0, 0x1e201c20, 0x14000036, "cave: b 0x5a16c8 (UserScroll epilogue, restores x19/x29/x30 and returns)"),
 };
 
+
+// ---------------------------------------------------------------------------
+// 5.  Framing cluster: ui_scale_fix / game_area_width_fix / field_zoom_fix /
+//     map_zoom_fix.  Ported from ct_nx (patches.h sections 7-9 + map_zoom) and
+//     generalised from the Switch's fixed 640x360 canvas to any panel.
+//
+//     WHY. libchrono has no single design resolution: a static initialiser at
+//     0x641c00.. builds an aspect-bucketed table -- 568x320 (16:9), 480x360
+//     (4:3), 568x340 (16:10), 1680x720 (ultrawide) -- and cocos2d scales the
+//     scene by panel/design per axis. No PortMaster panel is an integer
+//     multiple of any entry (1280/568 = 2.2535, 640/480 = 1.333). On top of
+//     that the field map node is drawn at a hard-coded (1.875, 1.66667)
+//     art->design scale, so field art pixels land at 2.5 x 2.22 panel px on a
+//     640x480 panel and 4.23 x 3.76 at 720p: non-integer AND non-square --
+//     the uneven-pixel / motion-shimmer look. UI sprites and text get the
+//     same fractional scale.
+//
+//     THE CURE is three coupled patches (never ship them piecemeal):
+//       ui_scale_fix   -- stamp EVERY table entry with (panel / design_scale)
+//                         so the scene scale is exactly design_scale on both
+//                         axes, whatever the runtime picker chooses.
+//                         design_scale auto = floor(panel_w / 640), min 1:
+//                         640x480 -> 1 (design 640x480), 1280x720 -> 2
+//                         (640x360, the ct_nx value), 1920x1080 -> 3.
+//       game_area_width_fix -- ctr::gameArea's width is a hard-coded 568.0
+//                         (its height is adaptive); make the width adaptive
+//                         too. A proven no-op at the stock 568 design.
+//       field_zoom_fix -- the fieldmap node's setScale(1.875, 1.66667) becomes
+//                         setScale(z, z); the view-size / camera-limit
+//                         densities follow 1/z so the drawn view still covers
+//                         exactly the design canvas; the node is re-anchored to
+//                         the canvas centre. Panel px per art px = z *
+//                         design_scale. Auto z picks the smallest integer
+//                         panel-px size p whose visible rows (panel_h / p) fit
+//                         the engine's fixed 432x224 field RenderTexture
+//                         (<= 220 rows): 640x480 -> 3 px (213x160 art visible),
+//                         720p -> 4 px (320x180, ct_nx's shipped framing).
+//       map_zoom_fix   -- the same for the WorldMap node (four setScale sites)
+//                         plus its anchor.
+//
+//     Every site below is ct_nx's (same libchrono v2.1.5, same ISA; load_base
+//     == load_virtbase here, so raw vaddrs apply directly) and every old word
+//     was re-verified against this .so before porting. ct_nx's 16:9-only
+//     constants (640 / 360 / 320 / 180) are replaced by the resolved design
+//     size; the derivations live in ct_nx's patches.h and are not repeated.
+// ---------------------------------------------------------------------------
+
+// --- ARM64 encoders (each verified against assembler output in ct_nx) -------
+static uint32_t movz_topf(int rd, float v) {          // movz w<rd>, #top16(v), lsl #16
+  union { float f; uint32_t u; } x; x.f = v;
+  return 0x52A00000u | ((x.u >> 16) << 5) | (uint32_t)rd;
+}
+static uint32_t movz_w(int rd, uint16_t imm16) {      // movz w<rd>, #imm16
+  return 0x52800000u | ((uint32_t)imm16 << 5) | (uint32_t)rd;
+}
+static uint32_t movk_w_hi(int rd, uint16_t imm16) {   // movk w<rd>, #imm16, lsl #16
+  return 0x72A00000u | ((uint32_t)imm16 << 5) | (uint32_t)rd;
+}
+static uint32_t fmov_s_from_w(int sd, int wn) {       // fmov s<sd>, w<wn>
+  return 0x1E270000u | ((uint32_t)wn << 5) | (uint32_t)sd;
+}
+static uint32_t encode_b(uintptr_t from, uintptr_t to) { // b <to>  (+-128MB)
+  int64_t off = (int64_t)to - (int64_t)from;
+  return 0x14000000u | (uint32_t)((off / 4) & 0x3FFFFFF);
+}
+static uint32_t encode_bl(uintptr_t from, uintptr_t to) { // bl <to> (+-128MB)
+  int64_t off = (int64_t)to - (int64_t)from;
+  return 0x94000000u | (uint32_t)((off / 4) & 0x3FFFFFF);
+}
+static uint32_t f32_bits(float v) { union { float f; uint32_t u; } x; x.f = v; return x.u; }
+// Nearest float representable in a movz top-16 immediate (7 mantissa bits).
+static float rn16(float f) {
+  union { float f; uint32_t u; } x; x.f = f;
+  x.u = (x.u + 0x8000u) & 0xFFFF0000u;
+  return x.f;
+}
+#define NOP_WORD 0xd503201fu
+
+// ui_scale_fix: stamp every design-resolution table entry with (w, h). The
+// (568x340) entry's width register reuses the 16:9 entry's (s8), so only its
+// height instruction exists.
+static void apply_ui_scale_fix(so_module *mod, float w, float h) {
+  static const struct { uint32_t va; int rd; float oldv; int is_h; } sites[] = {
+    { 0x641c34, 8,  568.0f, 0 },  // 16:9 entry, width
+    { 0x641c38, 9,  320.0f, 1 },  // 16:9 entry, height
+    { 0x641c4c, 8,  480.0f, 0 },  // 4:3 entry, width
+    { 0x641c50, 9,  360.0f, 1 },  // 4:3 entry, height
+    { 0x641c68, 8,  340.0f, 1 },  // 16:10 entry, height (width = 16:9 width via s8)
+    { 0x641c80, 8, 1680.0f, 0 },  // ultrawide entry, width
+    { 0x641c84, 9,  720.0f, 1 },  // ultrawide entry, height
+  };
+  PatchEntry e[7];
+  for (int i = 0; i < 7; i++) {
+    e[i].sym_name  = NULL;
+    e[i].func_off  = 0;
+    e[i].raw_vaddr = sites[i].va;
+    e[i].old_word  = movz_topf(sites[i].rd, sites[i].oldv);
+    e[i].new_word  = movz_topf(sites[i].rd, rn16(sites[i].is_h ? h : w));
+    e[i].desc      = "design resolution table entry (unified value)";
+  }
+  apply_patches(mod, e, 7);
+}
+
+// game_area_width_fix: gameArea = (origin.x, y, visW - 2*origin.x, h) instead
+// of the hard-coded 568-wide rect (AppDelegate::applicationDidFinishLaunching).
+static const PatchEntry g_gamearea_patches[] = {
+  P_RAW(0x641a94, 0x52a881c8, 0xbd401be6,
+        "gameArea: width literal 568.0 -> ldr s6,[sp,#0x18] (visible width)"),
+  P_RAW(0x641a98, 0x1e270106, 0xd503201f,
+        "gameArea: fmov s6,w8 -> nop (s6 now loaded directly)"),
+  P_RAW(0x641ab0, 0x1e202860, 0x1e204060,
+        "gameArea: x = origin.x (fadd s0,s3,s0 -> fmov s0,s3)"),
+};
+
+// field_zoom_fix, fixed part: the touch-drag / hit-test converters (mobile-only
+// input code, no display effect) kept dimensionally consistent with the zoom.
+static const PatchEntry g_field_zoom_fix_patches[] = {
+  P_RAW(0x360b08, 0x3ff00000, 0x40000000, "onTouchMoved/Ended: rodata view scale X: 1.875f -> 2.0f"),
+  P_RAW(0x360b0c, 0x3fd55555, 0x40000000, "onTouchMoved/Ended: rodata view scale Y: 1.66667f -> 2.0f"),
+};
+
+// field_zoom_fix, view part: FieldMap's view-size and camera-limit constants
+// follow the zoom so the fieldmap node (view_art_px * zoom design units) fills
+// the design canvas, and the character keeps stock's vertical registration
+// (52% down the canvas: 112 art rows above the tile row at stock's 216-row
+// display window) at every zoom. Sites, per the ct_nx disassembly:
+//   0x56d874  FieldMap::init            viewH_art = visibleH * C / 320
+//   0x570cfc  FieldMap::setScrollLimit  X-limit design->art conversion, C/480 = 1/zoom
+//   0x570d0c  FieldMap::setScrollLimit  Y-limit overhang K = (visibleH-320) * C / 320,
+//                                       wanted K = viewH - 192
+// viewH is capped at 220: the plane is a fixed 432x224 RenderTexture.
+static void apply_field_view_zoom(so_module *mod, float zoom, float design_h) {
+  if (zoom < 0.05f) zoom = 0.05f;
+  const float char_y = design_h * (186.66667f / 360.0f);   // stock registration, scaled to the canvas
+  float viewH = 112.0f + (design_h - char_y) / zoom;       // character-pinned branch
+  float fill  = design_h / zoom;                            // screen-fill branch
+  if (fill > viewH) viewH = fill;
+  if (viewH > 220.0f) viewH = 220.0f;
+
+  const float density_v = rn16(viewH * (320.0f / design_h));
+  const float conv_h    = rn16(480.0f / zoom);
+  // K site: only meaningful when the canvas is taller than the 320 the formula
+  // subtracts; at 360 this is ct_nx's 8*(viewH-192).
+  const int   have_k    = design_h > 321.0f;
+  const float kscale_v  = have_k ? rn16((viewH - 192.0f) * 320.0f / (design_h - 320.0f)) : 192.0f;
+
+  const PatchEntry e[3] = {
+    { NULL, 0, 0x56d874, movz_topf(8, 192.0f), movz_topf(8, density_v),
+      "FieldMap::init: view-height density 192 -> viewH*320/designH" },
+    { NULL, 0, 0x570cfc, movz_topf(8, 256.0f), movz_topf(8, conv_h),
+      "setScrollLimit: X-limit design->art conversion 256 -> 480/zoom" },
+    { NULL, 0, 0x570d0c, movz_topf(9, 192.0f), movz_topf(9, kscale_v),
+      "setScrollLimit: Y-limit overhang scale 192 -> (viewH-192)*320/(designH-320)" },
+  };
+  apply_patches(mod, e, have_k ? 3 : 2);
+}
+
+// field_zoom_fix, blit part: FieldMap::makeField's fieldmap-node setScale(x, y)
+// call. The original 4 slots (0x5761fc-0x576210) become one "load float into
+// w9, fmov s0 and s1 from it" sequence, so any zoom works and X == Y always.
+static void apply_field_zoom(so_module *mod, float zoom) {
+  union { float f; uint32_t u; } x; x.f = zoom;
+  const uint16_t lo16 = (uint16_t)(x.u & 0xFFFF), hi16 = (uint16_t)(x.u >> 16);
+  const PatchEntry e[4] = {
+    { NULL, 0, 0x5761fc, 0x528aaaa9, movz_w(9, lo16),      "makeField: fieldmap setScale: movz w9,#lo16(zoom)" },
+    { NULL, 0, 0x576200, 0x1e2fd000, movk_w_hi(9, hi16),   "makeField: fieldmap setScale: movk w9,#hi16(zoom),lsl#16" },
+    { NULL, 0, 0x576208, 0x72a7faa9, fmov_s_from_w(0, 9),  "makeField: fieldmap setScale X: fmov s0,w9" },
+    { NULL, 0, 0x576210, 0x1e270121, fmov_s_from_w(1, 9),  "makeField: fieldmap setScale Y: fmov s1,w9" },
+  };
+  apply_patches(mod, e, 4);
+}
+
+// field_zoom_fix, anchor part: makeField's setPosition gets (designW/2 -
+// 128*zoom, 0) instead of the zoom-blind (ctr::x_offset, 0). Identity at the
+// stock zoom on a 640-wide canvas (80, 0). Y stays 0 -- every vertical node
+// shift ct_nx tried exposed unrendered plane rows; Y is handled by viewH above.
+// Only 2 of the 6 slots before the blr are free (x21 = &ctr::x_offset is read
+// again ~700 bytes later by an overlay node), so the X/Y loads go in a 20-byte
+// cave at 0x376394 (verified all-zero, R+X segment) reached by a branch.
+static void apply_field_node_anchor(so_module *mod, float zoom, float design_w) {
+  if (zoom < 0.05f) zoom = 0.05f;
+  const uint32_t CAVE_CODE  = 0x376394;
+  const uint32_t BRANCH_OUT = 0x576220;  // was: movi d1,#0 (dead: old Y-arg = 0.0)
+  const uint32_t RESUME     = 0x576224;  // mov x0,x26 -- unchanged, resumes here
+  const uint32_t NOP_SITE   = 0x576230;  // was: ldr s0,[x21] (dead: old X-arg)
+  const uintptr_t base = (uintptr_t)mod->load_base;
+  const uintptr_t code_addr = base + CAVE_CODE, branch_addr = base + BRANCH_OUT, resume_addr = base + RESUME;
+
+  uint8_t cur[20];
+  __builtin_memcpy(cur, (const void *)code_addr, sizeof(cur));
+  for (unsigned i = 0; i < sizeof(cur); i++)
+    if (cur[i]) {
+      fprintf(stderr, "ct: patches: field node-anchor cave @0x%x is not empty -- skipping\n", CAVE_CODE);
+      return;
+    }
+
+  const float node_x = design_w * 0.5f - 128.0f * zoom;
+  const float node_y = 0.0f;
+  uint32_t words[5] = {
+    movz_topf(9, rn16(node_x)), fmov_s_from_w(0, 9),   // s0 = node_x
+    movz_topf(10, node_y),      fmov_s_from_w(1, 10),  // s1 = node_y
+    0,
+  };
+  words[4] = encode_b(code_addr + 16, resume_addr);
+  __builtin_memcpy((void *)code_addr, words, sizeof(words));
+
+  const PatchEntry e[2] = {
+    { NULL, 0, BRANCH_OUT, 0x2f00e401, encode_b(branch_addr, code_addr),
+      "makeField: setPosition X/Y args -> node-anchor cave (was: movi d1,#0)" },
+    { NULL, 0, NOP_SITE, 0xbd4002a0, NOP_WORD,
+      "makeField: old ctr::x_offset X-arg read -> nop (x21 itself untouched)" },
+  };
+  apply_patches(mod, e, 2);
+}
+
+// map_zoom_fix: WorldMap's four setScale(1.875, 1.66667) sites -> (zoom, zoom).
+// initWeatherMap's X is an fcsel between 1.875 and 2.34375 (= 1.25x); that
+// ratio is kept (zoom vs zoom*1.25).
+static void apply_map_zoom(so_module *mod, float zoom) {
+  if (zoom < 0.05f) zoom = 0.05f;
+  const uint32_t movz9      = movz_topf(9, rn16(zoom));
+  const uint32_t fmov_s0_w9 = fmov_s_from_w(0, 9);
+  static const uint32_t SIMPLE_BASES[3] = {
+    0x607c98,   // WorldMap::Init2, first fieldmap-alike node
+    0x607db4,   // WorldMap::Init2, second fieldmap-alike node
+    0x609c28,   // WorldMap::exitMiniMap
+  };
+  for (int i = 0; i < 3; i++) {
+    const uint32_t b = SIMPLE_BASES[i];
+    const PatchEntry e[3] = {
+      { NULL, 0, b - 8, 0x528aaaa9, movz9,      "WorldMap setScale: movz w9,#0x5555 -> movz w9,#top16(zoom)" },
+      { NULL, 0, b,     0x1e2fd000, fmov_s0_w9, "WorldMap setScale: fmov s0,#1.875 -> fmov s0,w9" },
+      { NULL, 0, b + 4, 0x72a7faa9, NOP_WORD,   "WorldMap setScale: movk w9,#0x3fd5,lsl#16 -> nop" },
+    };
+    apply_patches(mod, e, 3);
+  }
+  const PatchEntry e[4] = {
+    { NULL, 0, 0x608404, 0x52a802c8, movz_topf(8, rn16(zoom * 1.25f)), "initWeatherMap: mov w8,#2.34375 -> #top16(zoom*1.25)" },
+    { NULL, 0, 0x60840c, 0x1e2fd000, NOP_WORD,   "initWeatherMap: fmov s0,#1.875 -> nop (dead write)" },
+    { NULL, 0, 0x608420, 0x528aaaa9, movz9,      "initWeatherMap: movz w9,#0x5555 -> movz w9,#top16(zoom)" },
+    { NULL, 0, 0x608424, 0x72a7faa9, fmov_s0_w9, "initWeatherMap: movk -> fmov s0,w9 (fcsel operand)" },
+  };
+  apply_patches(mod, e, 4);
+}
+
+// map_zoom_fix, anchor part: WorldMap::Init2's map-node setPosition gets the
+// canvas-centred (designW/2 - 128*zoom, designH/2 - 96*zoom + 12) instead of
+// the zoom-blind (ctr::x_offset, visibleH - 320). The +12 is ct_nx's on-device
+// vertical trim (design units). The 10 stock slots between setScale and the
+// blr are reused in place: no cave needed.
+static void apply_map_node_anchor(so_module *mod, float zoom, float design_w, float design_h) {
+  if (zoom < 0.05f) zoom = 0.05f;
+  // X: centre the 256*zoom-wide view on the canvas (ct_nx formula; identity
+  // (designW-480)/2 = ctr::x_offset at stock 1.875). Y: ct_nx formula, which
+  // also drops the year panel from the mobile button-row reserve to the
+  // bottom edge, where remove_mobile_ui leaves the space free.
+  const float node_x = design_w * 0.5f - 128.0f * zoom;
+  const float node_y = design_h * 0.5f - 96.0f * zoom + 12.0f;
+  // The HUD is not drawn on the scene: WorldImpl::drawWorld renders the
+  // "windows" (year plate etc.) into two 544x256 RenderTextures that are
+  // children of this node (getWnd(i) = tag 500+i), so they ride along with
+  // any node shift -- on 640x480 the -48 shift pushed "1000 A.D." off the
+  // left edge. Both wnd layers take their X from one constant (Init2
+  // 0x607a2c: mov w9,#80.0 -> s8, used by tags 500 and 501; the map planes
+  // at 0x607950 have their own copy and are untouched). Move them right by
+  // the node shift in node-local (art) units: (stock_x - node_x) / zoom =
+  // 128 - 240/zoom (0 at stock, 8 at 2.0, 21.3 at 2.25).
+  const float stock_x = (design_w - 480.0f) * 0.5f;
+  const float wnd_x = 80.0f + (stock_x - node_x) / zoom;
+  const PatchEntry w[1] = {
+    { NULL, 0, 0x607a2c, 0x52a85409, movz_topf(9, rn16(wnd_x)),
+      "WorldMap::Init2 wnd layers (tags 500/501) setPosition X: 80.0 -> 80 + (stock_x - node_x)/zoom" },
+  };
+  apply_patches(mod, w, 1);
+  const PatchEntry e[7] = {
+    { NULL, 0, 0x607cbc, 0x52b87408, movz_topf(9, rn16(node_x)),  "WorldMap::Init2 setPosition: mov w8,#-320.0 -> movz w9,#node_x" },
+    { NULL, 0, 0x607cc0, 0xbd409fe0, fmov_s_from_w(0, 9),        "WorldMap::Init2 setPosition: ldr s0,[sp,#156] -> fmov s0,w9" },
+    { NULL, 0, 0x607cc4, 0xf0002de9, movz_topf(10, rn16(node_y)), "WorldMap::Init2 setPosition: adrp x9 -> movz w10,#node_y" },
+    { NULL, 0, 0x607cc8, 0x1e270101, fmov_s_from_w(1, 10),       "WorldMap::Init2 setPosition: fmov s1,w8 -> fmov s1,w10" },
+    { NULL, 0, 0x607ccc, 0xf9465529, NOP_WORD,                   "WorldMap::Init2 setPosition: ldr x9,[x9,#3240] -> nop" },
+    { NULL, 0, 0x607cdc, 0x1e212801, NOP_WORD,                   "WorldMap::Init2 setPosition: fadd s1,s0,s1 -> nop" },
+    { NULL, 0, 0x607ce0, 0xbd400120, NOP_WORD,                   "WorldMap::Init2 setPosition: ldr s0,[x9] -> nop" },
+  };
+  apply_patches(mod, e, 7);
+}
+
+// map_zoom_fix, camera part -- DISABLED (kept as history, not called). On
+// hardware this shifted the map plane but NOT the objects: the player stood
+// 21 art px off his real tile. WorldMap::setScroll(x, y) seeds the persistent
+// scroll as (128 - x, y + 96) -- 128 = half the stock 256-art view, so the
+// player lands 128 art px from the node's left edge. WorldMap::Scroll() then
+// only adds deltas (with 1536/1024 wrap), so this one constant is the whole
+// horizontal registration. With the node at its stock X and a 256*zoom-wide
+// view, centring the player on the canvas needs 240/zoom instead (identity
+// 128 at stock 1.875; 120 at ct_nx's 2.0; 106.67 at 2.25). Objects and map
+// share the scroll, so they move together. Y is left at 96: vertical centring
+// is the node's job (apply_map_node_anchor). The stock word is a single
+// `movi v2.2s, #0x43, lsl #24` (128.0 in both lanes) with no free slot, so it
+// becomes a branch to a 3-word cave (movz w9 / fmov s2,w9 / b back). w9 is
+// dead in setScroll.
+__attribute__((unused))
+static void apply_map_scroll_anchor(so_module *mod, float zoom) {
+  if (zoom < 0.05f) zoom = 0.05f;
+  const uint32_t CAVE_CODE = 0xd0118;   // 808 zero bytes in the R+X segment (ct_nx's debug-hook cave)
+  const uint32_t SITE      = 0x6098cc;  // WorldMap::setScroll: movi v2.2s,#0x43,lsl#24
+  const uint32_t RESUME    = 0x6098d0;
+  const uintptr_t base = (uintptr_t)mod->load_base;
+  const uintptr_t code_addr = base + CAVE_CODE, site_addr = base + SITE, resume_addr = base + RESUME;
+  uint8_t cur[12];
+  __builtin_memcpy(cur, (const void *)code_addr, sizeof(cur));
+  for (unsigned i = 0; i < sizeof(cur); i++)
+    if (cur[i]) {
+      fprintf(stderr, "ct: patches: map scroll-anchor cave @0x%x is not empty -- skipping\n", CAVE_CODE);
+      return;
+    }
+  uint32_t words[3] = { movz_topf(9, rn16(240.0f / zoom)), fmov_s_from_w(2, 9), 0 };
+  words[2] = encode_b(code_addr + 8, resume_addr);
+  __builtin_memcpy((void *)code_addr, words, sizeof(words));
+  const PatchEntry e[1] = {
+    { NULL, 0, SITE, 0x0f026462, encode_b(site_addr, code_addr),
+      "WorldMap::setScroll: X half-view 128.0 -> 240/zoom via cave (was: movi v2.2s,#0x43,lsl#24)" },
+  };
+  apply_patches(mod, e, 1);
+}
+
+// ---------------------------------------------------------------------------
+// text_scale_fix -- draw system-font labels 1:1.
+//
+// The engine runs cocos2d with Director::setContentScaleFactor(2.0)
+// (AppDelegate, 0x641af8: its art is @2x the design points). For text that
+// means Texture2D::initWithString asks the platform for the font at
+// points x 2 (a 12-pt label -> a 24 px bitmap), and the resulting sprite is
+// sized in points (px / 2) and then drawn at the design->panel scale. Net:
+// every text bitmap is drawn at design_scale / 2 -- 1:1 only where the
+// design scale is 2 (720p), and 2/3 on a 640x480 panel (design 480x360,
+// scale 1.333): a 24 px bitmap squeezed to 16 px by nearest sampling, which
+// is why no glyph size ever looked clean on 4:3 (measured with a frame drawn
+// around each bitmap: 232x36 -> 153x24, 102x20 -> 68x13).
+//
+// Fix: render the bitmap at PANEL resolution and undo the point-space shrink:
+//   1. Texture2D::initWithString 0x93a324  `ldr s1,[x0,#392]` (the CSF that
+//      multiplies fontSize / dimensions / stroke) -> design_scale via cave:
+//      a 12-pt label becomes a 16 px request on 640x480 (= 1x pixel font).
+//   2. Label::createSpriteForSystemFont 0x86af40, right after
+//      Sprite::createWithTexture: setScale(CSF/design_scale) on the sprite
+//      (a 16 px texture is 8 pt at CSF 2; x1.5 -> 12 pt -> 16 px on screen).
+//   3. same function 0x86afa4..b4 `setContentSize(sprite->getContentSize())`
+//      -> the size x CSF/design_scale, so the label's box (used for
+//      anchoring/centring) matches what is drawn.
+//   4. Label::createShadowSpriteForSystemFont 0x86ab3c: same setScale on
+//      the engine's shadow sprite (unused by this game's labels, kept
+//      consistent).
+// A scale of exactly 1 (design_scale == CSF, i.e. 720p) is a no-op, so the
+// 16:9 look is unchanged. w16 is the scratch register (IP0, dead at all
+// four sites -- neither function touches x16/x17); x21 is dead between
+// createWithTexture and its reload at 0x86af5c. Caves live in the 808-byte
+// zero block at 0xd0118 (ct_nx's debug cave, otherwise unused here).
+// ---------------------------------------------------------------------------
+static void apply_text_scale_fix(so_module *mod, float design_scale) {
+  const uintptr_t base = (uintptr_t)mod->load_base;
+  const uint32_t CSF_SITE = 0x641af8;            // AppDelegate: fmov s0,#2.0 -> setContentScaleFactor
+  uint32_t csf_word; __builtin_memcpy(&csf_word, (const void *)(base + CSF_SITE), 4);
+  if (csf_word != 0x1e201000u) {
+    fprintf(stderr, "ct: patches: text_scale_fix: content scale factor site 0x%x is %08x, not fmov s0,#2.0 -- skipping\n",
+            CSF_SITE, csf_word);
+    return;
+  }
+  const float csf = 2.0f;
+  if (design_scale < 0.05f) return;
+  const float k = csf / design_scale;            // sprite scale (1.5 on 640x480, 1.0 at 720p)
+  if (fabsf(k - 1.0f) < 1e-3f) {
+    debugPrintf("patches: text_scale_fix: design scale == content scale factor, nothing to do\n");
+    return;
+  }
+  const uint32_t CAVE = 0xd0118;
+  const uint32_t SETSCALE = 0x888ebc;            // cocos2d::Node::setScale(float)
+  uint32_t w[40]; int n = 0;
+  uint32_t off1, off2, off3, off4;
+  const uint32_t fb = f32_bits(design_scale), kb = f32_bits(k);
+  // cave 1: s1 = design_scale; back to 0x93a328
+  off1 = n * 4;
+  w[n++] = movz_w(16, (uint16_t)(fb & 0xffff));
+  w[n++] = movk_w_hi(16, (uint16_t)(fb >> 16));
+  w[n++] = fmov_s_from_w(1, 16);
+  w[n++] = encode_b(base + CAVE + n * 4, base + 0x93a328);
+  // cave 2: x0 = sprite -> setScale(k); restore x0; replaced `ldr x8,[x0]`; back to 0x86af44
+  off2 = n * 4;
+  w[n++] = 0xaa0003f5u;                          // mov x21, x0
+  w[n++] = movz_w(16, (uint16_t)(kb & 0xffff));
+  w[n++] = movk_w_hi(16, (uint16_t)(kb >> 16));
+  w[n++] = fmov_s_from_w(0, 16);
+  w[n++] = encode_bl(base + CAVE + n * 4, base + SETSCALE);
+  w[n++] = 0xaa1503e0u;                          // mov x0, x21
+  w[n++] = 0xf9400008u;                          // ldr x8, [x0]
+  w[n++] = encode_b(base + CAVE + n * 4, base + 0x86af44);
+  // cave 3: x0 = &sprite content size -> label->setContentSize(size * k); back to 0x86afb8
+  off3 = n * 4;
+  w[n++] = 0x2d400400u;                          // ldp s0, s1, [x0]
+  w[n++] = movz_w(16, (uint16_t)(kb & 0xffff));
+  w[n++] = movk_w_hi(16, (uint16_t)(kb >> 16));
+  w[n++] = fmov_s_from_w(2, 16);
+  w[n++] = 0x1e220800u;                          // fmul s0, s0, s2
+  w[n++] = 0x1e220821u;                          // fmul s1, s1, s2
+  w[n++] = 0xd10043ffu;                          // sub sp, sp, #16
+  w[n++] = 0x2d0007e0u;                          // stp s0, s1, [sp]
+  w[n++] = 0x910003e1u;                          // mov x1, sp
+  w[n++] = 0xaa1303e0u;                          // mov x0, x19   (the Label)
+  w[n++] = 0xf9400268u;                          // ldr x8, [x19]
+  w[n++] = 0xf940b108u;                          // ldr x8, [x8, #352]  (setContentSize slot)
+  w[n++] = 0xd63f0100u;                          // blr x8
+  w[n++] = 0x910043ffu;                          // add sp, sp, #16
+  w[n++] = encode_b(base + CAVE + n * 4, base + 0x86afb8);
+  // cave 4: shadow sprite: replaced `str x0,[x19,#968]`, setScale(k); back to 0x86ab40
+  off4 = n * 4;
+  w[n++] = 0xf901e660u;                          // str x0, [x19, #968]
+  w[n++] = movz_w(16, (uint16_t)(kb & 0xffff));
+  w[n++] = movk_w_hi(16, (uint16_t)(kb >> 16));
+  w[n++] = fmov_s_from_w(0, 16);
+  w[n++] = encode_bl(base + CAVE + n * 4, base + SETSCALE);
+  w[n++] = encode_b(base + CAVE + n * 4, base + 0x86ab40);
+  // the cave must be untouched zero bytes
+  const uint8_t *cur = (const uint8_t *)(base + CAVE);
+  for (int i = 0; i < n * 4; i++)
+    if (cur[i]) {
+      fprintf(stderr, "ct: patches: text_scale_fix: cave @0x%x is not empty -- skipping\n", CAVE);
+      return;
+    }
+  __builtin_memcpy((void *)(base + CAVE), w, (size_t)n * 4);
+  const PatchEntry e[4] = {
+    { NULL, 0, 0x93a324, 0xbd418801u, encode_b(base + 0x93a324, base + CAVE + off1),
+      "Texture2D::initWithString: font px = pt x design_scale (was x content scale factor 2)" },
+    { NULL, 0, 0x86af40, 0xf9400008u, encode_b(base + 0x86af40, base + CAVE + off2),
+      "Label::createSpriteForSystemFont: text sprite setScale(CSF/design_scale)" },
+    { NULL, 0, 0x86afa4, 0xf9400268u, encode_b(base + 0x86afa4, base + CAVE + off3),
+      "Label::createSpriteForSystemFont: label content size x CSF/design_scale" },
+    { NULL, 0, 0x86ab3c, 0xf901e660u, encode_b(base + 0x86ab3c, base + CAVE + off4),
+      "Label::createShadowSpriteForSystemFont: shadow sprite setScale(CSF/design_scale)" },
+  };
+  apply_patches(mod, e, 4);
+  fprintf(stderr, "ct: text_scale_fix: labels at panel resolution (font px = pt x %g, sprite x %g)\n",
+          (double)design_scale, (double)k);
+}
+
+// Resolve the per-panel framing from config + the engine's frame size (the
+// internal FBO when render_scale < 1, else the panel).
+typedef struct {
+  int   frame_w, frame_h;
+  float design_scale, design_w, design_h;
+  float field_zoom, map_zoom;
+} CtFraming;
+
+static CtFraming ct_framing_resolve(void) {
+  extern Config config;
+  CtFraming f;
+  int fw = screen_width, fh = screen_height;
+#ifndef __SWITCH__
+  ct_rescale_engine_size(&fw, &fh);
+#endif
+  if (fw <= 0) fw = 1280;
+  if (fh <= 0) fh = 720;
+  f.frame_w = fw; f.frame_h = fh;
+  // Auto design scale. Wide panels: an integer multiple of the 640-wide 16:9
+  // canvas (1280x720 -> 2, 640x360 exact). Narrow panels (4:3, 1:1): the
+  // engine's own 480-wide 4:3 layout -- its menus are laid out for a 480x360
+  // box, so a 1:1 640x480 canvas leaves them centred in dead space (tried on
+  // the RG40XX-H; rejected). 640x480 -> 1.333 (design 480x360, stock UI size),
+  // 720x720 -> 1.5, 1024x768 -> 2.133. Field/map art stays integer regardless
+  // (field_zoom auto compensates), only UI sprites carry the fractional scale.
+  float s = config.design_scale;
+  if (s <= 0.0f) {
+    const float aspect = (float)fw / (float)fh;
+    if (aspect >= 1.6f) s = floorf((float)fw / 640.0f);
+    else                s = (float)fw / 480.0f;
+    if (s < 1.0f) s = 1.0f;
+  }
+  f.design_scale = s;
+  f.design_w = (float)fw / s;
+  f.design_h = (float)fh / s;
+  float z = config.field_zoom;
+  if (z <= 0.0f) {
+    float p = ceilf((float)fh / 220.0f);   // panel px per art px: visible rows must fit the 432x224 plane
+    if (p < 1.0f) p = 1.0f;
+    z = p / s;
+  }
+  f.field_zoom = z;
+  // Auto map zoom: same px/art as the field, but capped so the SNES 256-column
+  // world-map window fits the panel width. The map's screen-fixed sprites (the
+  // "1000 A.D." year plate at the bottom-left) sit inside those 256 columns, so
+  // 3 px on a 640-wide panel (768 px) clips the plate off the left edge
+  // (tried on the RG40XX-H; rejected). 640x480 -> 2 px (map_zoom 1.5, plate
+  // visible, more map than the SNES window since the planes are 544 wide),
+  // 1280x720 -> 4 px, 640x360 -> 2 px (unchanged).
+  float mz = config.map_zoom;
+  if (mz <= 0.0f) {
+    float pm = floorf((float)fw / 256.0f);
+    const float pf = z * s;
+    if (pm < 1.0f) pm = 1.0f;
+    if (pm > pf) pm = pf;
+    mz = pm / s;
+  }
+  f.map_zoom = mz;
+  return f;
+}
+
 // ---------------------------------------------------------------------------
 // Apply every enabled feature group. Called from main() while game_mod's .text
 // is still RW (before so_finalize), and only when the v2.1.5 fingerprint
@@ -812,6 +1322,52 @@ static inline void apply_game_patches(so_module *mod) {
   if (config.fix_diagonal_movement) {
     debugPrintf("patches: applying diagonal_movement fix\n");
     apply_patches(mod, g_diagonal_patches, PATCH_COUNT(g_diagonal_patches));
+  }
+
+  // Framing cluster (section 5). The field/map zoom patches assume the
+  // ui_scale_fix canvas -- without it the engine keeps its 568/480-wide designs
+  // and the zoomed view no longer matches the canvas -- so they are gated on it.
+  if (config.ui_scale_fix || config.field_zoom_fix || config.map_zoom_fix || config.game_area_width_fix) {
+    const CtFraming fr = ct_framing_resolve();
+    fprintf(stderr, "ct: framing: frame %dx%d design %gx%g (scale %g) field_zoom %g "
+                    "(%g px/art, %gx%g art visible) map_zoom %g%s\n",
+            fr.frame_w, fr.frame_h, (double)fr.design_w, (double)fr.design_h,
+            (double)fr.design_scale, (double)fr.field_zoom,
+            (double)(fr.field_zoom * fr.design_scale),
+            (double)(fr.design_w / fr.field_zoom), (double)(fr.design_h / fr.field_zoom),
+            (double)fr.map_zoom, config.ui_scale_fix ? "" : " [ui_scale_fix off: zoom patches skipped]");
+    // UI font size: config font_scale, else auto by panel (see config.h).
+    // Auto: 1.5 everywhere. With text_scale_fix the labels are drawn 1:1, and
+    // 1.5x ChronoType (3 px strokes) is the SNES font's scale next to 3 px/art
+    // field sprites on 640x480; 1x read as tiny in dialogue (user, RG40XX-H).
+    // At 720p (design scale 2) 1.5 is the value the launcher always shipped.
+    gfx_set_font_scale(config.font_scale > 0.0f ? config.font_scale : 1.5f);
+    if (config.ui_scale_fix) {
+      if (config.text_scale_fix) apply_text_scale_fix(mod, fr.design_scale);
+      if (config.field_zoom_fix) {
+        debugPrintf("patches: applying field_zoom_fix (zoom=%g)\n", (double)fr.field_zoom);
+        apply_patches(mod, g_field_zoom_fix_patches, PATCH_COUNT(g_field_zoom_fix_patches));
+        apply_field_view_zoom(mod, fr.field_zoom, fr.design_h);
+        apply_field_zoom(mod, fr.field_zoom);
+        apply_field_node_anchor(mod, fr.field_zoom, fr.design_w);
+      }
+      if (config.map_zoom_fix) {
+        debugPrintf("patches: applying map_zoom_fix (zoom=%g)\n", (double)fr.map_zoom);
+        apply_map_zoom(mod, fr.map_zoom);
+        apply_map_node_anchor(mod, fr.map_zoom, fr.design_w, fr.design_h);
+        // apply_map_scroll_anchor is NOT called: on hardware it moved the map
+        // but not the objects (WorldObjectManager places them from its own
+        // state, not this scroll), so the player stood in the wrong place.
+      }
+    }
+    if (config.game_area_width_fix) {
+      debugPrintf("patches: applying game_area_width_fix\n");
+      apply_patches(mod, g_gamearea_patches, PATCH_COUNT(g_gamearea_patches));
+    }
+    if (config.ui_scale_fix) {
+      debugPrintf("patches: design resolution %gx%g (all aspect-table entries)\n", (double)fr.design_w, (double)fr.design_h);
+      apply_ui_scale_fix(mod, fr.design_w, fr.design_h);
+    }
   }
 }
 

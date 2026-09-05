@@ -97,6 +97,51 @@ typedef struct {
   char key_start[16];
   char key_select[16];
   int right_stick_mirror;
+  // Framing / scale cluster (patches.h section 5; ported from ct_nx and
+  // generalised to any panel). Boot-time libchrono patches: relaunch to change.
+  //   ui_scale_fix   -- stamp EVERY entry of the engine's design-resolution table
+  //                     with panel/design_scale, so the scene scale is exactly
+  //                     design_scale on both axes (stock: 568x320 / 480x360 ...,
+  //                     never an integer multiple of any panel).
+  //   design_scale   -- panel px per design unit. 0 = auto: floor(panel_w/640),
+  //                     min 1 -> 1 on 640x480, 2 on 1280x720, 3 on 1080p.
+  //   game_area_width_fix -- ctr::gameArea width adaptive (hard-coded 568.0 in
+  //                     stock); no-op at the stock design, required with ui_scale_fix.
+  //   field_zoom_fix -- square, integer field art pixels: the fieldmap node's
+  //                     setScale(1.875, 1.66667) becomes (z, z) and the view /
+  //                     camera-limit sizes follow 1/z so the drawn view still
+  //                     fills the canvas. Panel px per art px = z * design_scale.
+  //   field_zoom     -- z. 0 = auto: the smallest integer panel-px size whose
+  //                     visible rows fit the engine's fixed 432x224 field plane
+  //                     (<= 220 rows): 3 px on 640x480, 4 px at 720p (ct_nx).
+  //   map_zoom_fix / map_zoom -- world-map counterpart; map_zoom 0 = field_zoom.
+  int   ui_scale_fix;
+  float design_scale;
+  int   game_area_width_fix;
+  int   field_zoom_fix;
+  float field_zoom;
+  int   map_zoom_fix;
+  float map_zoom;
+  // font_snap -- pixel fonts (ChronoType: a 16 px/em grid) only render cleanly
+  // at whole multiples of their native grid, but the engine's layout on a
+  // 4:3 panel wants 1.5x. Modes (gfx.c):
+  //   0 = off (FreeType at the fractional size: lumpy strokes)
+  //   1 = whole multiples only (1x / 2x / 3x), largest that fits the cell
+  //   2 = half multiples too (1.5x = render 3x, keep every other pixel: a
+  //       regular 1-2-1-2 px pattern)
+  //   3 = half multiples, box-filtered (1.5x with soft, even edges)
+  // Auto-detected from the font's outlines; a non-pixel font is untouched.
+  int   font_snap;
+  // text_scale_fix -- draw system-font labels 1:1 (patches.h). Stock cocos2d
+  // renders them at points x 2 and draws the sprite at design_scale / 2, which
+  // is 2/3 on a 4:3 panel: every glyph nearest-squeezed. With the fix a 12-pt
+  // label is a 16 px bitmap drawn 16 px tall on 640x480. No-op at 720p.
+  int   text_scale_fix;
+  // font_scale -- visual size of the UI font relative to the engine's request.
+  // 0 = auto (1.5: 12-pt labels -> 24 px on 640x480 = 1.5x ChronoType, 3 px
+  // strokes like the 3 px/art field; 1x was "tiny" in dialogue). Env
+  // CT_FONT_SCALE overrides.
+  float font_scale;
 } Config;
 
 extern Config config;

@@ -172,6 +172,25 @@ void *AAssetManager_open_fake(void *mgr, const char *path, int mode) {
       fprintf(stderr, "iolog: aopen %s (pooled)\n", real);
   } else {
     f = fopen(real, "rb");
+    if (!f) {
+      // Flat-layout fallback. The APK keeps its GLSL under assets/Shaders/ and
+      // the engine asks for "Shaders/ShaderDrawPalettedTexture.fsh"; an install
+      // that copied the files flat (the beta.6-9 turnkey bundles did) returns an
+      // empty shader source, the field-map program never links and every field
+      // renders black. Retry on the basename before giving up.
+      const char *slash = strrchr(real, '/');
+      const char *dir_end = real + strlen(ASSETS_DIR);
+      if (slash && slash > dir_end) {
+        char flat[1024];
+        snprintf(flat, sizeof(flat), "%s/%s", ASSETS_DIR, slash + 1);
+        f = fopen(flat, "rb");
+        if (f) {
+          static int warned = 0;
+          if (!warned++) fprintf(stderr, "ct: assets: %s not found, using %s (flat layout)\n", real, flat);
+          snprintf(real, sizeof(real), "%s", flat);
+        }
+      }
+    }
     if (!f) { free(a); return NULL; }
     // a generous buffer; archives are read in long sequential bursts.
     // CT_IOBUF_KB tunes it on-device without a rebuild (default 256).

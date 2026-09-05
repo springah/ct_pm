@@ -210,6 +210,17 @@ static void compile_attached(ProgRec *pr) {
       glCompileShader(s->id);
       s->compiled = 1;
       s->deferred = 0;
+      // The deferred compile answered GL_COMPILE_STATUS = TRUE on the engine's
+      // behalf, so a real failure here is otherwise invisible: the link fails,
+      // the program never stores, and everything drawn with it is black. Say so.
+      GLint ok = 0;
+      glGetShaderiv(s->id, GL_COMPILE_STATUS, &ok);
+      if (!ok) {
+        char log[2048] = { 0 };
+        glGetShaderInfoLog(s->id, sizeof(log) - 1, NULL, log);
+        fprintf(stderr, "shadercache: COMPILE FAILED shader %u (%s):\n%s\n--- source ---\n%s\n--- end ---\n",
+                s->id, i == 0 ? "vertex" : "fragment", log, s->src ? s->src : "(none)");
+      }
     }
   }
 }
@@ -453,6 +464,11 @@ void ct_sc_glLinkProgram(GLuint program) {
   GLint ok = 0;
   glGetProgramiv(program, GL_LINK_STATUS, &ok);
   if (ok) store(program, path);
+  else {
+    char log[1024] = { 0 };
+    glGetProgramInfoLog(program, sizeof(log) - 1, NULL, log);
+    fprintf(stderr, "shadercache: LINK FAILED program %u (key %016llx): %s\n", program, key, log);
+  }
 }
 
 void ct_sc_glDeleteShader(GLuint shader) {

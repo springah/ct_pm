@@ -74,7 +74,8 @@ fi
 export LD_LIBRARY_PATH="$GAMEDIR/libs.${DEVICE_ARCH}:$LD_LIBRARY_PATH"
 export SDL_GAMECONTROLLERCONFIG="$sdl_controllerconfig"   # framework pad mapping
 export GAMEDIR
-export CT_FONT_SCALE=1.5   # pixel-font (ChronoType) visual-size scale; tune to taste
+# UI font size is auto per panel (config.txt `font_scale`, 0 = auto: 1.0 on 4:3,
+# 1.5 at 720p+). To force one: export CT_FONT_SCALE=1.5
 # SNES-style text drop-shadow is baked into the binary (force, 1px down-right, 70%).
 # To override: export CT_TEXT_SHADOW="off" | "auto" | "dx,dy,opacity"
 # (offsets in final pixels, opacity 0..1).

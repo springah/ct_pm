@@ -16,6 +16,7 @@
 
 #include "gfx.h"
 #include "util.h"
+#include "config.h"
 
 // We load the full set of Switch shared fonts and fall back across them per
 // glyph, so Latin, CJK and symbol coverage all work (the engine may ask us to
@@ -26,6 +27,47 @@ static FT_Face g_faces[MAX_FACES];
 static int g_face_count = 0;
 static int g_ok = 0;
 static float g_font_scale = 1.0f;
+static int   g_font_scale_env = 0;   // CT_FONT_SCALE was set: config/auto must not override
+
+// Pixel-font grid: the px/em size at which face 0's outlines sit exactly on
+// pixel boundaries (0 = not a pixel font). ChronoType is authored on a 16 px/em
+// grid (every outline coordinate is a multiple of 1024/16 = 64 font units), so
+// it renders cleanly only at 16/32/48... px; any other size puts strokes on
+// half pixels and they come out alternately 1 and 2 px wide -- the lumpy text
+// on 4:3 panels, where the engine's 1.333x scale lands sizes like 20 and 13.
+static int g_font_grid = 0;
+
+static long gcd_l(long a, long b) { while (b) { long t = a % b; a = b; b = t; } return a; }
+
+static void detect_font_grid(FT_Face face) {
+  if (!face || !FT_IS_SCALABLE(face) || face->units_per_EM <= 0) return;
+  long g = 0;
+  long n = face->num_glyphs; if (n > 1024) n = 1024;
+  for (long gi = 0; gi < n; gi++) {
+    if (FT_Load_Glyph(face, (FT_UInt)gi, FT_LOAD_NO_SCALE | FT_LOAD_NO_HINTING | FT_LOAD_NO_BITMAP))
+      continue;
+    if (face->glyph->format != FT_GLYPH_FORMAT_OUTLINE) continue;
+    const FT_Outline *o = &face->glyph->outline;
+    for (int i = 0; i < o->n_points; i++) {
+      g = gcd_l(g, labs((long)o->points[i].x));
+      g = gcd_l(g, labs((long)o->points[i].y));
+    }
+    g = gcd_l(g, labs((long)face->glyph->advance.x)); // font units under NO_SCALE
+  }
+  if (g <= 0 || (face->units_per_EM % g) != 0) return;
+  long ppem = face->units_per_EM / g;
+  if (ppem < 4 || ppem > 64) return;   // outline font, or a grid too fine to matter
+  g_font_grid = (int)ppem;
+  debugPrintf("gfx: pixel font detected, native grid %d px/em\n", g_font_grid);
+}
+
+// Snapped sizes are exact grid multiples: render them unhinted so the outline
+// lands on the pixel grid verbatim (no AA fringe, no hinter nudging).
+static FT_Int32 glyph_load_flags(int px) {
+  if (g_font_grid > 0 && config.font_snap && (px % g_font_grid) == 0)
+    return FT_LOAD_RENDER | FT_LOAD_NO_HINTING;
+  return FT_LOAD_RENDER;
+}
 
 // Text drop-shadow (the classic SNES-style offset). Mode:
 //   0 = off    : never draw a shadow
@@ -53,7 +95,7 @@ void gfx_init(void) {
 
 #ifndef __SWITCH__
   { const char *s = getenv("CT_FONT_SCALE");
-    if (s) { float v = (float)atof(s); if (v > 0.1f && v < 8.0f) g_font_scale = v; } }
+    if (s) { float v = (float)atof(s); if (v > 0.1f && v < 8.0f) { g_font_scale = v; g_font_scale_env = 1; } } }
   { const char *s = getenv("CT_TEXT_SHADOW");
     if (s) {
       if (!strcmp(s, "off"))        g_shadow_mode = 0;
@@ -102,6 +144,12 @@ void gfx_init(void) {
   }
 #endif
 
+  if (g_face_count > 0) detect_font_grid(g_faces[0]);
+#ifndef __SWITCH__
+  { const char *s = getenv("CT_FONT_SNAP"); if (s) config.font_snap = atoi(s); }
+  fprintf(stderr, "gfx: %d font face(s), pixel grid %d px/em, font_snap %d, font_scale %g\n",
+          g_face_count, g_font_grid, config.font_snap, (double)g_font_scale);
+#endif
   g_ok = g_face_count > 0;
   if (!g_ok)
     debugPrintf("gfx: no shared fonts available\n");
@@ -132,13 +180,13 @@ static FT_Face load_glyph(uint32_t cp, int px) {
     if (FT_Get_Char_Index(g_faces[i], cp) == 0 && cp != ' ')
       continue;
     FT_Set_Pixel_Sizes(g_faces[i], 0, px);
-    if (FT_Load_Char(g_faces[i], cp, FT_LOAD_RENDER) == 0)
+    if (FT_Load_Char(g_faces[i], cp, glyph_load_flags(px)) == 0)
       return g_faces[i];
   }
   // last resort: render with the primary face's notdef
   if (g_face_count > 0) {
     FT_Set_Pixel_Sizes(g_faces[0], 0, px);
-    if (FT_Load_Char(g_faces[0], cp, FT_LOAD_RENDER) == 0)
+    if (FT_Load_Char(g_faces[0], cp, glyph_load_flags(px)) == 0)
       return g_faces[0];
   }
   return NULL;
@@ -158,7 +206,19 @@ typedef struct {
 #define GCACHE_SIZE 2048
 static Glyph g_gcache[GCACHE_SIZE];
 
+// Half-step pixel-font sizes (font_snap 2/3): a size that is an odd multiple
+// of half the grid (24 px for a 16 px grid = 1.5x) is rendered at double size
+// on the exact grid and then halved -- every art pixel becomes 1.5 device px.
+// Mode 2 decimates (nearest: a regular 1-2-1-2 px pattern, the classic
+// non-integer retro look); mode 3 box-averages (soft but perfectly even).
+static int half_step_px(int px) {
+  extern Config config;
+  return g_font_grid > 0 && (config.font_snap == 2 || config.font_snap == 3) &&
+         (px % g_font_grid) != 0 && (px % (g_font_grid / 2)) == 0;
+}
+
 static const Glyph *get_glyph(uint32_t cp, int px) {
+  extern Config config;
   uint32_t idx = (cp * 2654435761u + (uint32_t)px * 2246822519u) & (GCACHE_SIZE - 1);
   Glyph *e = &g_gcache[idx];
   if (e->valid && e->cp == cp && e->px == px)
@@ -166,7 +226,8 @@ static const Glyph *get_glyph(uint32_t cp, int px) {
   if (e->buf) { free(e->buf); e->buf = NULL; }  // evict any prior occupant
   e->valid = 1; e->cp = cp; e->px = px;
   e->adv = e->left = e->top = e->w = e->rows = 0;
-  FT_Face f = load_glyph(cp, px);               // the one FreeType render, on miss
+  const int half = half_step_px(px);
+  FT_Face f = load_glyph(cp, half ? px * 2 : px); // the one FreeType render, on miss
   if (f) {
     FT_GlyphSlot sl = f->glyph;
     e->adv  = (int)(sl->advance.x >> 6);
@@ -175,12 +236,41 @@ static const Glyph *get_glyph(uint32_t cp, int px) {
     e->w    = (int)sl->bitmap.width;
     e->rows = (int)sl->bitmap.rows;
     if (e->w > 0 && e->rows > 0) {
-      e->buf = (unsigned char *)malloc((size_t)e->w * e->rows);
-      if (e->buf) {
-        for (int ry = 0; ry < e->rows; ry++)
-          memcpy(e->buf + (size_t)ry * e->w,
-                 sl->bitmap.buffer + (size_t)ry * sl->bitmap.pitch, (size_t)e->w);
-      } else { e->w = e->rows = 0; }
+      if (!half) {
+        e->buf = (unsigned char *)malloc((size_t)e->w * e->rows);
+        if (e->buf) {
+          for (int ry = 0; ry < e->rows; ry++)
+            memcpy(e->buf + (size_t)ry * e->w,
+                   sl->bitmap.buffer + (size_t)ry * sl->bitmap.pitch, (size_t)e->w);
+        } else { e->w = e->rows = 0; }
+      } else {
+        const int W2 = e->w, R2 = e->rows, pitch = (int)sl->bitmap.pitch;
+        const int W = (W2 + 1) / 2, R = (R2 + 1) / 2;
+        e->buf = (unsigned char *)malloc((size_t)W * R);
+        if (e->buf) {
+          const int box = config.font_snap == 3;
+          for (int y = 0; y < R; y++)
+            for (int x = 0; x < W; x++) {
+              int v;
+              if (!box) {
+                v = sl->bitmap.buffer[(size_t)(2 * y) * pitch + 2 * x];
+              } else {
+                int sum = 0, n = 0;
+                for (int dy = 0; dy < 2; dy++)
+                  for (int dx = 0; dx < 2; dx++) {
+                    const int sy = 2 * y + dy, sx = 2 * x + dx;
+                    if (sy < R2 && sx < W2) { sum += sl->bitmap.buffer[(size_t)sy * pitch + sx]; n++; }
+                  }
+                v = n ? sum / n : 0;
+              }
+              e->buf[(size_t)y * W + x] = (unsigned char)v;
+            }
+          e->w = W; e->rows = R;
+          e->adv  = (e->adv + 1) / 2;
+          e->left = e->left / 2;
+          e->top  = (e->top + 1) / 2;
+        } else { e->w = e->rows = 0; }
+      }
     }
   }
   return e;
@@ -254,6 +344,12 @@ static void draw_line_glyphs(unsigned char *out, int W, int H,
   }
 }
 
+void gfx_set_font_scale(float scale) {
+  if (g_font_scale_env || !(scale > 0.1f && scale < 8.0f)) return;
+  g_font_scale = scale;
+  fprintf(stderr, "gfx: font_scale %g\n", (double)scale);
+}
+
 unsigned char *gfx_render_text_rgba(const char *text, int font_size,
                                     int r, int g, int b, int a,
                                     int align_h, int max_w, int max_h, int wrap,
@@ -274,6 +370,22 @@ unsigned char *gfx_render_text_rgba(const char *text, int font_size,
   // in the full px line cell: matches Android's size without clipping descenders.
   int rpx = px - (px / 8 + 1);
   if (rpx < 1) rpx = 1;
+  // Pixel fonts: snap the glyph size to the largest multiple of the native grid
+  // that fits the line cell (see g_font_grid). The line cell (px) is left as
+  // requested so the engine's layout metrics are unchanged; only the glyph
+  // raster moves. If the engine constrains the label and the text would not
+  // fit at that size, step down a multiple (a narrow stat cell gets 1x while a
+  // wide button or dialog line keeps 2x).
+  const int snap = (g_font_grid > 0 && config.font_snap);
+  // step = the grid (mode 1: 1x, 2x, 3x ...) or half of it (modes 2/3: also
+  // 1.5x, 2.5x ... via the double-render-and-halve path in get_glyph).
+  const int step = (config.font_snap >= 2) ? g_font_grid / 2 : g_font_grid;
+  int k = 0;
+  if (snap) {
+    k = px / step;
+    if (k * step < g_font_grid) k = g_font_grid / step;   // never below 1x
+    rpx = k * step;
+  }
 
   // cell/line metrics from the primary face at the full engine size
   FT_Set_Pixel_Sizes(g_faces[0], 0, px);
@@ -282,6 +394,59 @@ unsigned char *gfx_render_text_rgba(const char *text, int font_size,
   int line_h = (int)(g_faces[0]->size->metrics.height >> 6);
   if (line_h <= 0) line_h = px + px / 4;
   if (ascender <= 0) ascender = (px * 4) / 5;
+
+  // split into lines on '\n'; optionally greedy-wrap to max_w
+  // (we collect line start/end byte ranges)
+  #define MAX_LINES 256
+  const char *ls[MAX_LINES];
+  const char *le[MAX_LINES];
+  int nlines = 0;
+  int meas_w = 0;
+  for (;;) {
+    nlines = 0;
+    meas_w = 0;
+    const char *p = text;
+    const char *line_start = text;
+    while (*p && nlines < MAX_LINES) {
+      const char *cur = p;
+      uint32_t cp = utf8_next(&p);
+      if (cp == '\n') {
+        ls[nlines] = line_start; le[nlines] = cur; nlines++;
+        line_start = p;
+        continue;
+      }
+      if (wrap && max_w > 0) {
+        int w = measure_line(line_start, p, rpx);
+        if (w > max_w && cur != line_start) {
+          // break before the current glyph (prefer a previous space if any)
+          const char *brk = cur;
+          for (const char *q = cur; q > line_start; q--) {
+            if (*q == ' ') { brk = q; break; }
+          }
+          ls[nlines] = line_start; le[nlines] = brk; nlines++;
+          line_start = (*brk == ' ') ? brk + 1 : brk;
+          p = line_start;
+        }
+      }
+    }
+    if (nlines < MAX_LINES) { ls[nlines] = line_start; le[nlines] = p; nlines++; }
+
+    // measured width = widest line
+    for (int i = 0; i < nlines; i++) {
+      int w = measure_line(ls[i], le[i], rpx);
+      if (w > meas_w) meas_w = w;
+    }
+    // snapped size does not fit the engine's box: try the next multiple down
+    if (snap && k * step > g_font_grid &&
+        ((max_w > 0 && meas_w > max_w) || (max_h > 0 && nlines * line_h > max_h))) {
+      k--;
+      rpx = k * step;
+      continue;
+    }
+    break;
+  }
+  int meas_h = nlines * line_h;
+  if (meas_h < ascender + descender) meas_h = ascender + descender;
 
   // reduced-size glyph metrics, for vertical centring within each px line cell
   FT_Set_Pixel_Sizes(g_faces[0], 0, rpx);
@@ -292,47 +457,6 @@ unsigned char *gfx_render_text_rgba(const char *text, int font_size,
   if (content_h <= 0) content_h = rpx;
   int top_pad = (line_h - content_h) / 2;
   if (top_pad < 0) top_pad = 0;
-
-  // split into lines on '\n'; optionally greedy-wrap to max_w
-  // (we collect line start/end byte ranges)
-  #define MAX_LINES 256
-  const char *ls[MAX_LINES];
-  const char *le[MAX_LINES];
-  int nlines = 0;
-  const char *p = text;
-  const char *line_start = text;
-  while (*p && nlines < MAX_LINES) {
-    const char *cur = p;
-    uint32_t cp = utf8_next(&p);
-    if (cp == '\n') {
-      ls[nlines] = line_start; le[nlines] = cur; nlines++;
-      line_start = p;
-      continue;
-    }
-    if (wrap && max_w > 0) {
-      int w = measure_line(line_start, p, rpx);
-      if (w > max_w && cur != line_start) {
-        // break before the current glyph (prefer a previous space if any)
-        const char *brk = cur;
-        for (const char *q = cur; q > line_start; q--) {
-          if (*q == ' ') { brk = q; break; }
-        }
-        ls[nlines] = line_start; le[nlines] = brk; nlines++;
-        line_start = (*brk == ' ') ? brk + 1 : brk;
-        p = line_start;
-      }
-    }
-  }
-  if (nlines < MAX_LINES) { ls[nlines] = line_start; le[nlines] = p; nlines++; }
-
-  // measured width = widest line; height = lines * line_h
-  int meas_w = 0;
-  for (int i = 0; i < nlines; i++) {
-    int w = measure_line(ls[i], le[i], rpx);
-    if (w > meas_w) meas_w = w;
-  }
-  int meas_h = nlines * line_h;
-  if (meas_h < ascender + descender) meas_h = ascender + descender;
 
   int W = max_w > 0 ? max_w : meas_w;
   int H = max_h > 0 ? max_h : meas_h;
