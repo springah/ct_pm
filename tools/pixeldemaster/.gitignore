@@ -6,3 +6,5 @@
 *.ppm
 entries.txt
 pd/
+# python byte-code cache
+__pycache__/

@@ -52,26 +52,24 @@ static int config_needs_rewrite = 0;
 int screen_width = 1280;
 int screen_height = 720;
 
-// Known keys seen while parsing: a file from an older build lacks the keys a
+// Known keys seen while parsing, one flag per key (a duplicated line must not
+// stand in for a missing one): a file from an older build lacks the keys a
 // newer one added, and read_config then asks main() to rewrite it so they
 // appear (with their defaults) for the user to find and edit.
-static int config_keys_seen = 0;
-static int config_keys_total(void) {
-  int c = 0;
-  #define CONFIG_VAR_INT(var) c++
-  #define CONFIG_VAR_FLOAT(var) c++
-  #define CONFIG_VAR_STR(var) c++
+static struct {
+  #define CONFIG_VAR_INT(var) unsigned char var
+  #define CONFIG_VAR_FLOAT(var) unsigned char var
+  #define CONFIG_VAR_STR(var) unsigned char var
   CONFIG_VARS
   #undef CONFIG_VAR_INT
   #undef CONFIG_VAR_FLOAT
   #undef CONFIG_VAR_STR
-  return c;
-}
+} config_seen;
 
 static inline void parse_var(const char *name, const char *value) {
-  #define CONFIG_VAR_INT(var) if (!strcmp(name, #var)) { config.var = atoi(value); config_keys_seen++; return; }
-  #define CONFIG_VAR_FLOAT(var) if (!strcmp(name, #var)) { config.var = atof(value); config_keys_seen++; return; }
-  #define CONFIG_VAR_STR(var) if (!strcmp(name, #var)) { strlcpy(config.var, value, sizeof(config.var)); config_keys_seen++; return; }
+  #define CONFIG_VAR_INT(var) if (!strcmp(name, #var)) { config.var = atoi(value); config_seen.var = 1; return; }
+  #define CONFIG_VAR_FLOAT(var) if (!strcmp(name, #var)) { config.var = atof(value); config_seen.var = 1; return; }
+  #define CONFIG_VAR_STR(var) if (!strcmp(name, #var)) { strlcpy(config.var, value, sizeof(config.var)); config_seen.var = 1; return; }
   CONFIG_VARS
   #undef CONFIG_VAR_INT
   #undef CONFIG_VAR_FLOAT
@@ -83,7 +81,7 @@ int read_config(const char *file) {
 
   memset(&config, 0, sizeof(Config));
   config_needs_rewrite = 0;
-  config_keys_seen = 0;
+  memset(&config_seen, 0, sizeof(config_seen));
   config.screen_width = -1; // auto
   config.screen_height = -1;
   strlcpy(config.language, LANG_DEFAULT, sizeof(config.language));
@@ -157,9 +155,14 @@ int read_config(const char *file) {
   if (config.language[0] == 0)
     strlcpy(config.language, LANG_DEFAULT, sizeof(config.language));
 
-  // fewer distinct keys than we know -> the file predates some of them
-  if (config_keys_seen < config_keys_total())
-    config_needs_rewrite = 1;
+  // any key we know but never saw -> the file predates it; name them in the log
+  #define CONFIG_VAR_INT(var) if (!config_seen.var) { debugPrintf("config: %s missing, adding default\n", #var); config_needs_rewrite = 1; }
+  #define CONFIG_VAR_FLOAT(var) CONFIG_VAR_INT(var)
+  #define CONFIG_VAR_STR(var) CONFIG_VAR_INT(var)
+  CONFIG_VARS
+  #undef CONFIG_VAR_INT
+  #undef CONFIG_VAR_FLOAT
+  #undef CONFIG_VAR_STR
   return config_needs_rewrite ? 1 : 0;
 }
 
