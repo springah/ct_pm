@@ -3,7 +3,8 @@
 // unresolved-import surface. Does NOT run guest code (no init_array) — that needs
 // the full shim layer. Build + run inside the PortMaster builder:
 //
-//   ~/Desktop/ct-pm-shell.sh
+//   docker run --rm -it --platform=linux/arm64 -v "$PWD":/workspace -w /workspace \
+//       ghcr.io/monkeyx-net/portmaster-build-templates/portmaster-builder:aarch64-latest bash
 //   gcc -O2 -g -march=armv8-a -Iportmaster -Isource $(sdl2-config --cflags) \
 //       portmaster/harness_load.c source/so_util.c portmaster/os_linux.c \
 //       $(sdl2-config --libs) -o /tmp/harness && /tmp/harness <dir-with-.so>

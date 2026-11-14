@@ -1,38 +1,25 @@
-# ct_nx → PortMaster — port scaffolding
+# PortMaster port — engineering notes
 
-WIP for the Linux/aarch64 (PortMaster) port. Kept out of `source/` so it does NOT
-get swept into the Switch Makefile's `source/*.c` wildcard. See `~/Desktop/ct-portmaster.md`
-for the full scope and `~/Desktop/ct-pm-shell.sh` to enter the builder.
+Working notes from the bring-up of the Linux/aarch64 (PortMaster) port, kept as a
+record of *why* things are the way they are. The user-facing documentation is
+`README.md` (repo root) and `portmaster/multiverse/ct.md`; the build entry points are
+`portmaster/build.sh`, `portmaster/ffmpeg-build.sh` and `portmaster/package.sh`. The
+Switch (`ct_nx`) target is maintained separately; the `#ifdef __SWITCH__` branches in
+`source/` are left intact for that project but are not built or tested from here.
 
 ## Files
 - `os.h`       — platform abstraction (the only OS surface the shared code may call).
-- `os_linux.c` — SDL2 + POSIX backend (complete: loader/TLS/GL core, input, env).
-- `os_switch.c` — NOT YET WRITTEN: move the existing libnx calls out of `source/`
-  into this backend so both platforms share one tree.
+- `os_linux.c` — SDL2 + POSIX backend (loader/TLS/GL core, input, env).
+- `osk.c`, `crash.c`, `compat_libc.c`, `movie_stub.c` — Linux-only units (see below).
+- `harness_load.c`, `harness_stubs.c`, `movie_probe.c` — bring-up smoke tests; not
+  part of the shipped binary.
 
-## The TLS finding (the one real unknown — SOLVED by reference)
+## The TLS finding
 The `.so` reads its stack canary at `tpidr_el0 + 0x28`. The Switch repoints `tpidr_el0`
 (`source/util.c` `armSetTlsRw`); glibc forbids that. Fix in `os_linux.c`: a large host
 `_Thread_local os_tls_pad[2<<12]` forces glibc to reserve enough static TLS that the
 guest's tpidr-relative access stays valid (the gmloader-next "incantation"). Plus the
 `__stack_chk_guard` data symbol already exported in `source/imports.c`.
-
-## Refactor map — source/ call sites → os_* (do this when wiring it up)
-| source file | current (libnx) | replace with |
-|---|---|---|
-| `so_util.c:60` | `svcMapProcessCodeMemory` + `virtmemFindCodeMemory`/reservation | `os_code_reserve()` |
-| `so_util.c:95,462` | `svcSetProcessMemoryPermission(Perm_Rx/Rw)` | `os_code_protect(addr,size,exec)` |
-| `so_util.c:465` | `svcUnmapProcessCodeMemory` + remove reservation | `os_code_free()` |
-| `main.c:40` | `__libnx_initheap` + `svcSetHeapSize` | `os_heap_init()` (no-op on Linux) |
-| `util.c:60` | `armSetTlsRw` (custom TLS block) | `os_tls_init()` (TLS-pad trick) |
-| `main.c:107-128` | `eglGetDisplay(EGL_DEFAULT_DISPLAY)` + `nwindow*` + EGL | `os_gfx_init()` |
-| `movie_player.c:172`, present path | `eglSwapBuffers` | `os_gfx_swap()` |
-| `imports.c:702` | game's `eglGetProcAddress` import | route to `os_gl_get_proc()` |
-| `main.c:279,291,502` | `PadState`/`padUpdate`/`padGetButtons` | `os_input_init/poll()` |
-| `main.c:96,513` | `appletGetOperationMode`/`appletGetFocusState` | `os_is_focused()` + fixed res |
-| paths `/switch/ct/`, `fsdev` | hard-coded | `os_data_dir()` (`$GAMEDIR`) |
-| `setGetSystemLanguage` | libnx set:sys | `os_system_language()` |
-| `mutexLock`, `svcSleepThread` | libnx | POSIX `pthread_mutex`, `os_sleep_ms()` |
 
 ## Loader specifics carried over from gmloader-next (reference)
 - mmap one RW region for the whole PT_LOAD span + a PATCH_SZ trampoline arena
@@ -146,12 +133,14 @@ builder with the ffmpeg prefix mounted at `/ff`. Then copy the 5 `.so.*` from th
 ffmpeg build into `pkg/ct/libs.aarch64/` named by soname (these are gitignored build artifacts).
 
 ### Packaging (PortMaster zip)
-`portmaster/package.sh [ct-binary]` assembles a PortMaster-installable `ct_pm.zip` from
-`pkg/` + the built `ct` (whitelist staging, so the user's commercial files and dev cruft
-can't leak). Zip extracts to `/roms/ports/`: `Chrono Trigger.sh` + `ct/{port.json, ct,
-font.ttf, screenshot.png, libs.aarch64/, licenses/}`. port.json is `version 2`, `name
-"ct_pm.zip"`, `rtr false`, `runtime null`, `arch ["aarch64"]` (the Half-Life template — the
-canonical native, user-supplied-commercial-files port). This is the self-host / on-device
+`portmaster/package.sh [ct-binary]` assembles a PortMaster-installable `ct-<version>.zip`
+from `pkg/` + the built `ct` (whitelist staging, so the user's commercial files and dev
+cruft can't leak; the version comes from `source/version.h`). Zip extracts to
+`/roms/ports/`: `Chrono Trigger.sh`, `gameinfo.xml` + `ct/{port.json, ct, font.ttf,
+font-4x3.ttf, screenshot.png, libs.aarch64/, licenses/}`. port.json is `version 2`, `name
+"ct.zip"` (the port's identity to HarbourMaster, deliberately not the download filename),
+`rtr false`, `runtime null`, `arch ["aarch64"]` (the Half-Life template — the canonical
+native, user-supplied-commercial-files port). This is the self-host / on-device
 zip only. For the OFFICIAL submission, `portmaster/multiverse/README.md` is the single
 source of truth — note the target repo is **PortMaster-MV-New** (the older
 PortMaster-Multiverse is archived), the layout is `ports/ct/`, `tools/build_release.py`
@@ -201,15 +190,11 @@ Health items surfaced in a code review — not blockers, "do when convenient":
   `lint.yml` runs shellcheck (`-S warning`; the launcher carries an inline
   directive for its framework-sourced vars) + `py_compile` on the pixeldemaster
   tools. Remaining gap: the Switch branches aren't covered here — they're built
-  in ct_nx; if a Makefile returns, add a `devkitpro/devkita64` job. The
+  in ct_nx, which is maintained separately. The
   ffmpeg-*linked* binary is still validated in the builder image (pinned 7.1).
 - **Automated tests.** Only manual smoke probes today (`movie_probe.c`, the
   load/resolve harnesses). They need the real `.so` + assets, so they can't run
   on a hosted runner — candidate for a self-hosted device runner (the TrimUI).
-- **Finish the OS-abstraction symmetry.** The Linux side goes through `os_*`
-  (`os.h`/`os_linux.c`); the Switch side is still inline libnx under
-  `#ifdef __SWITCH__`. Writing `os_switch.c` (already flagged "NOT YET WRITTEN"
-  at the top of this file) would let both targets share one shape.
 - **Split the monolithic units (in progress).** The Linux crash + termination
   signal handlers are now out of `main.c` in `portmaster/crash.c`
   (`ct_install_crash_handler` / `ct_term_requested`, declared in `crash.h`).

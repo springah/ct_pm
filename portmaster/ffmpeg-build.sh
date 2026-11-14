@@ -1,8 +1,8 @@
 #!/bin/bash
 # Build a minimal, decode-only FFmpeg (shared libs) for the ct_pm PortMaster port.
-# Runs inside the PortMaster aarch64 builder (glibc 2.31, native arm64 under colima).
+# Runs inside the PortMaster aarch64 builder image (glibc 2.31, arm64).
 # Only what the cutscenes need: MP4(mov) demux + H.264 & AAC decode + swscale/swresample.
-# Output goes to /out (mounted to ~/.ctbuild/ffmpeg-aarch64 on the host).
+# Output goes to /out (mount a host directory there; build.sh expects it at /ff).
 set -e
 
 SRC=/work/ffmpeg-7.1.1

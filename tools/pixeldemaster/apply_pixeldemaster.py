@@ -14,7 +14,7 @@ uses; only PNGs whose name exists in resources.bin are applied.
   --with-text  also apply Localize/*/msg/*.txt files (changes text layout; off by
                default = PNG visuals only, lowest risk).
 
-Example (the shipped springah set):
+Example (a typical full set):
   python3 apply_pixeldemaster.py resources.bin out.bin \
       CTPD-Main.ctp CTPD-DefaultUIBattleGauge.ctp CTPD-SNES.ctp \
       CTPD-ArtIconsSolid.ctp CTPD-InteractionsOn.ctp CTPD-InventoryColor.ctp

@@ -21,15 +21,15 @@ the zip from it.
 | `ports/ct/gameinfo.xml` | `portmaster/pkg/gameinfo.xml` | required; its `<image>` must match the screenshot filename |
 | `ports/ct/README.md` | `ct.md` | the asset-extraction guide shown to users |
 | `ports/ct/screenshot.png` | **TODO — the one hard gate** | see below |
-| `ports/ct/ct/...` | the built `ct`, `font.ttf`, `libs.aarch64/`, `licenses/` | gitignored here, so they must be committed in the fork |
+| `ports/ct/ct/...` | the built `ct`, `font.ttf`, `font-4x3.ttf`, `libs.aarch64/`, `licenses/` | gitignored here, so they must be committed in the fork |
 
 ## Rules worth knowing before you package
 
 - **`port.json` `name` must be `"ct.zip"`.** `build_release.py` forces
   `name = <port_dir>.zip` for any port added after 2024-01-26 and marks the port *broken*
-  otherwise, which drops it from the build and fails PR CI. Our committed `port.json` says
-  `"ct_pm.zip"` because that is the self-host zip name — change it in the fork, not here.
-  Keep the port directory and gamedir as `ct`.
+  otherwise, which drops it from the build and fails PR CI. The committed `port.json`
+  already says `"ct.zip"`; `package.sh` names the *download* `ct-<version>.zip`, which is
+  a different thing (see its header). Keep the port directory and gamedir as `ct`.
 - **The screenshot ships INSIDE the zip** at `ports/ct/screenshot.{png,jpg}` and is a
   `REQUIRED_FILES` error if missing. This reverses the archived repo's convention, where
   the screenshot lived at repo level and `port.json` used `image: null` — do not follow

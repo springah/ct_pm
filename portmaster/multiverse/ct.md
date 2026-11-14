@@ -48,8 +48,8 @@ compiles and caches the GPU shaders into `shadercache/` — scene changes get sm
 once it's warm), and the mobile touch overlays replaced with proper controller UI.
 
 - The game looks its best on **16:9 panels, ideally 720p** — an exact 2× of the
-  engine's internal layout. 4:3 devices are fully playable; their slightly uneven
-  pixel scaling is the engine's own doing.
+  engine's internal layout. 4:3 panels (640×480) get their own exact framing: field art
+  at 2×2 pixels, the SNES's 256 columns on screen, and a second pixel font drawn 1:1.
 - Heavy scenes dipping on a weaker GPU? Set `render_scale 0.75` (renders smaller
   internally, upscales — trades a little sharpness for speed).
 - `language` — auto-detects; set `en fr de it es ja ko zh zh-Hant` to pin one.
@@ -62,7 +62,8 @@ once it's warm), and the mobile touch overlays replaced with proper controller U
 - The **ct_nx** loader project, on which this port is built.
 - The **PortMaster** community and toolchain.
 - **FFmpeg** (LGPL) — bundled, decode-only, for cutscene playback.
-- **Caveras** — the *ChronoType* SNES font recreation (CC BY-NC-SA), used for in-game text.
+- **Caveras** — the *ChronoType* SNES font recreation (CC BY-NC-SA), the UI font on 16:9 panels.
+- **M+ FONTS PROJECT / itouhiro** — *PixelMplus10* (M+ FONT LICENSE), the UI font on 4:3 panels.
 
 ## Compile
 
@@ -73,7 +74,7 @@ data is never distributed — it comes from your own APK as above.
 # in the PortMaster aarch64 builder image:
 bash portmaster/ffmpeg-build.sh     # build the bundled decode-only FFmpeg
 bash portmaster/build.sh            # build the aarch64 `ct` binary (links FMV)
-bash portmaster/package.sh          # assemble ct_pm.zip
+bash portmaster/package.sh          # assemble ct-<version>.zip
 ```
 
 See `portmaster/NOTES.md` in the repo for the full build/recompile details.

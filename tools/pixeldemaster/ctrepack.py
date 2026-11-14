@@ -64,8 +64,10 @@ def repack(in_path, out_path, overrides=None, verbose=True):
 
 if __name__=="__main__":
     # round-trip self-test: repack with NO overrides, reopen, verify N entries decode identically
-    src=sys.argv[1] if len(sys.argv)>1 else "/Users/shant/Desktop/ct_emu/assets/resources.bin"
-    out="/tmp/rt_test.bin"
+    if len(sys.argv)<2:
+        print("usage: ctrepack.py <resources.bin> [out.bin]   (round-trip self-test)"); sys.exit(1)
+    src=sys.argv[1]
+    out=sys.argv[2] if len(sys.argv)>2 else src+".roundtrip.bin"
     print("=== round-trip (no overrides) ===")
     repack(src,out,{})
     # verify

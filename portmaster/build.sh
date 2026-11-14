@@ -3,7 +3,7 @@
 # aarch64 builder image (glibc 2.31). Run from the repo root, e.g.:
 #
 #   docker run --rm --platform=linux/arm64 \
-#     -v "$PWD":/workspace -v "$HOME/.ctbuild/ffmpeg-aarch64":/ff \
+#     -v "$PWD":/workspace -v "$FF":/ff \
 #     -w /workspace IMG bash portmaster/build.sh
 #
 # FFPREFIX must point at a decode-only FFmpeg 7.x build (build it with

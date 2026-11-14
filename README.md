@@ -12,8 +12,9 @@ Android `arm64-v8a` `.so` files, shims their imports to native libraries, and ru
 game in a minimal emulated-Android environment via **SDL2 + GLES2**.
 
 This is a sibling of [`ct_nx`](https://github.com/NaGaa95/ct_nx) (the Nintendo Switch
-port). The codebase is **dual-target**: the OS layer is behind `#ifdef __SWITCH__`, so the
-same `source/` builds for both Switch (libnx) and Linux (SDL2/POSIX, in `portmaster/`).
+port), which is maintained separately. The OS layer here is behind `#ifdef __SWITCH__`
+so the shared `source/` stays mergeable with it, but only the Linux (SDL2/POSIX,
+`portmaster/`) target is built and tested from this repository.
 
 > Status: **playable** — boots, renders on the GPU, plays and saves. Verified on a
 > **TrimUI Smart Pro** (Allwinner A133 / PowerVR GE8300, 1280×720), **Anbernic RG40XX-H**
@@ -25,8 +26,8 @@ same `source/` builds for both Switch (libnx) and Linux (SDL2/POSIX, in `portmas
 
 ## Install
 
-1. Download `ct.zip` from [Releases](https://github.com/springah/ct_pm/releases). It
-   contains the port only — no game data.
+1. Download `ct-<version>.zip` from [Releases](https://github.com/springah/ct_pm/releases).
+   It contains the port only — no game data.
 2. Extract it into your device's ports folder, so you end up with
    `.../ports/Chrono Trigger.sh` and `.../ports/ct/`. (PortMaster's own
    *Install from zip* option does the same thing.)

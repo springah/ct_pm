@@ -4,8 +4,8 @@
 // hooks. Reimplemented from the gmloader-next pattern
 // (read-only reference, GPL-3) under ct_nx's MIT.
 //
-// Build inside the PortMaster builder:  ~/Desktop/ct-pm-shell.sh
-//   gcc -O2 -march=armv8-a $(sdl2-config --cflags) ... -c portmaster/os_linux.c
+// Built by portmaster/build.sh inside the PortMaster aarch64 builder image (see
+// README "Build").
 #define _GNU_SOURCE
 #include "os.h"
 
