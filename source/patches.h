@@ -482,73 +482,22 @@ static const PatchEntry g_mobile_ui_patches[] = {
   // Fix 6: VirtualPad::openVPad -- green/yellow/red/blue color-button
   //         prompts (dance scene and other generic input/QTE scenes)
   //
-  //     First attempt at this fix (now reverted) tried to NOP the call to
-  //     VirtualPad::setupColorButtons out of VirtualPad::init, reasoning
-  //     that the call site's return value was discarded and the callee was
-  //     purely cosmetic (no nsStateMachine/nsInput::Manager references,
-  //     unlike setupCursorColorButtons/setupPasscodeButtons). That was
-  //     wrong: the callee doesn't just build cosmetics, it also STORES the
-  //     created Menu* into VirtualPad::this+0x360 --
-  //
-  //         bl   Menu::createWithArray(...)
-  //         str  x0, [x20, #0x360]      ; <-- required side effect
-  //         ...
-  //         ldr  x0, [x20, #0x360]
-  //         ldr  x8, [x0]
-  //         ldr  x8, [x8, #0x170]       ; setVisible
-  //         mov  w1, wzr
-  //         blr  x8                     ; starts hidden by default
-  //
-  //     Skipping the call left this+0x360 uninitialized. VirtualPad::
-  //     openVPad() later does `ldr x0,[this,#0x360]; cbz x0,<skip>; ldr
-  //     x8,[x0]; ldr x8,[x8,#0x170]; blr x8` with NO null-check on garbage
-  //     memory being non-zero -- an unconditional vtable-slot dereference
-  //     off whatever was already sitting at that heap offset. That is the
-  //     crash the person hit on the button-prompt page. Lesson: a callee
-  //     whose only visible effect at its single call site is "return value
-  //     discarded" can still be required for a *sibling* member field a
-  //     totally different function depends on -- discarded-return does not
-  //     mean side-effect-free, and this file's own "don't skip
-  //     construction, only flip the final setVisible" philosophy (every
-  //     other Fix in this table) exists precisely to avoid this class of
-  //     bug. Applying it here properly this time:
-  //
-  //     VirtualPad::openVPad() (exported, 112 bytes) is the sole place
-  //     that flips these nodes visible. It touches three fields in order:
+  //     VirtualPad::openVPad() touches three fields in order:
   //
   //       this+0x360 -- the setupColorButtons Menu (dance/QTE buttons)
   //       this+0x368 -- the setupCursorColorButtons/setupPasscodeButtons
-  //                     container Node (confirmed via `str x20,[x19,#0x368]`
-  //                     in both of those functions' own disassembly)
-  //       this+0x370 -- nsMenu::nsInput::Manager* -- NOT a visual node;
-  //                     openVPad tail-calls nsInput::Manager::setPause(bool)
-  //                     on it (confirmed by resolving the tail-call target
-  //                     via .rela.plt) to un-pause input when the pad opens
+  //                     container Node (both builders store it at +0x368)
+  //       this+0x370 -- nsMenu::nsInput::Manager*, un-paused by openVPad
   //
-  //     Both of the first two follow the identical pattern already used
-  //     throughout this file -- cbz-guarded, vtable+0x170 (setVisible),
-  //     bool arg in w1:
+  //     Only hide the Menu at +0x360. The +0x368 container is functional:
+  //     it holds the selectable letters for the LARA password and the
+  //     cursor-based color controls. Hiding it makes these puzzles unusable
+  //     even with a controller (ct_nx 5883b63). Leave openVPad +0x4c's
+  //     setVisible(true) and the input manager's setPause(false) unchanged.
   //
-  //         ldr x0, [x19, #0x360]  (or #0x368)
-  //         cbz x0, <skip>
-  //         ldr x8, [x0]
-  //         mov w1, #1              ; true  <-- flip to wzr (false)
-  //         ldr x8, [x8, #0x170]
-  //         blr x8
-  //
-  //     Forcing both `mov w1,#1` sites to `mov w1,wzr` means every object
-  //     still gets fully constructed exactly as originally (this+0x360/
-  //     0x368/0x370 all end up valid, non-garbage pointers -- no more
-  //     uninitialized-memory risk), and closeVPad's own setVisible(false)
-  //     calls are already correct and untouched. The this+0x370 tail-call
-  //     to setPause(bool) is left completely alone, so input for the
-  //     cursor/passcode minigames keeps un-pausing/re-pausing exactly as
-  //     before -- this patch is visibility-only.
-  //
-  //     Net effect: covers BOTH the plain dance/QTE color buttons AND the
-  //     cursor/passcode variant's buttons (a strict improvement over the
-  //     original attempt's scope), with none of the construction-skipping
-  //     risk that caused the crash.
+  //     Keep all setup calls: setupColorButtons initializes +0x360, which
+  //     openVPad dereferences. closeVPad still hides both nodes and pauses
+  //     the input manager when the puzzle closes.
   // -------------------------------------------------------------------------
 
   // openVPad +0x34: this+0x360 (setupColorButtons Menu) setVisible(true)
@@ -556,12 +505,6 @@ static const PatchEntry g_mobile_ui_patches[] = {
   P_SYM(VPAD_OPENVPAD_SYM, 0x34, 0x52800021, 0x2A1F03E1,
     "VirtualPad::openVPad +0x34 bool arg=false: color-button Menu "
     "(this+0x360) stays hidden"),
-
-  // openVPad +0x4c: this+0x368 (cursor/passcode container Node)
-  // setVisible(true) -> setVisible(false)
-  P_SYM(VPAD_OPENVPAD_SYM, 0x4C, 0x52800021, 0x2A1F03E1,
-    "VirtualPad::openVPad +0x4C bool arg=false: cursor/passcode button "
-    "container (this+0x368) stays hidden"),
 
   // -------------------------------------------------------------------------
   // Fix 7: cSfcWork CONFIG_WORK constant -- Movement assumed-default

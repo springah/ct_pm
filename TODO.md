@@ -52,6 +52,9 @@ explicitly deferred. Tick as you go; delete the file (or rename to CHANGELOG not
 - [x] **CI link check**: `c-compile.yml` now links both variants (the real FMV player and
       `movie_stub.c`). `-Wall` is not enabled: `source/main.c` has three unused Switch-side
       symbols that would need guarding first.
+- [x] **Upstream keypad fix** (ct_nx `5883b63`): `remove_mobile_ui` no longer hides the
+      passcode / cursor-colour container (`VirtualPad::openVPad +0x4C`). Not reproduced on
+      the TrimUI; check the passcode puzzle if a save reaches it.
 - [ ] **Font fallback face on Knulli**: `DroidSansFallbackFull.ttf` exists on current
       Knulli and is what the launcher copies to `fonts/standard.ttf`. A headless run with
       `language ja` loads it and serves the Japanese text requests. Still to do: look at
@@ -81,6 +84,9 @@ explicitly deferred. Tick as you go; delete the file (or rename to CHANGELOG not
       reference only: the next attempt should start from what the engine's 4:3 table entry
       actually wants and decide field zoom, UI scale and font as one design, not three
       independent auto rules. Not part of this release.
+- **Palette texture cache** (ct_nx `011bd89`, `source/palette_cache.c`, experimental and
+      off by default upstream): the engine uploads a new palette texture per sprite per
+      frame; the cache shares them. Port as an opt-in key and measure on the TrimUI.
 - **Runtime `.ctp` mod loader** (ct_nx's `source/modpack.c`): would let users drop packs
       into a `mods/` folder instead of repacking `resources.bin` offline. Not ported.
 - **Other CFWs** (muOS, ArkOS, ROCKNIX, AmberELEC): untested. The untested surface is

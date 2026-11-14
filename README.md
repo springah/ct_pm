@@ -151,7 +151,8 @@ instruction, so a different build safely skips them). Set `0` to disable any one
 * `cursor_fix` — white-on-dark menu selection instead of the mobile cream colour-invert
   highlight.
 * `remove_mobile_ui` — hide the on-screen touch overlays (field/world/title buttons,
-  per-menu back/close, race + colour prompts); movement default RUN→WALK.
+  per-menu back/close, race + colour prompts); movement default RUN→WALK. Functional
+  puzzle controls (the passcode keypad, the cursor colour controls) stay visible.
 * `controller_glyphs` — render `<BTN_*>` button prompts + bracketed glyphs.
 * `fix_diagonal_movement` — smooth the field diagonal-movement stutter.
 
