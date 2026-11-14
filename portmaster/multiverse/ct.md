@@ -47,9 +47,9 @@ knobs. The defaults: **native resolution**, a **shader cache** on (first session
 compiles and caches the GPU shaders into `shadercache/` — scene changes get smoother
 once it's warm), and the mobile touch overlays replaced with proper controller UI.
 
-- The game looks its best on **16:9 panels, ideally 720p** — an exact 2× of the
-  engine's internal layout. 4:3 panels (640×480) get their own exact framing: field art
-  at 2×2 pixels, the SNES's 256 columns on screen, and a second pixel font drawn 1:1.
+- Built for and tested on the **TrimUI Smart Pro (16:9, 720p)** — an exact 2× of the
+  engine's internal layout. Other 720p 16:9 handhelds should match. 4:3 panels boot and
+  play but their framing is experimental and not supported in this release.
 - Heavy scenes dipping on a weaker GPU? Set `render_scale 0.75` (renders smaller
   internally, upscales — trades a little sharpness for speed).
 - `language` — auto-detects; set `en fr de it es ja ko zh zh-Hant` to pin one.

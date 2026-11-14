@@ -16,13 +16,12 @@ port), which is maintained separately. The OS layer here is behind `#ifdef __SWI
 so the shared `source/` stays mergeable with it, but only the Linux (SDL2/POSIX,
 `portmaster/`) target is built and tested from this repository.
 
-> Status: **playable** — boots, renders on the GPU, plays and saves. Verified on a
-> **TrimUI Smart Pro** (Allwinner A133 / PowerVR GE8300, 1280×720), **Anbernic RG40XX-H**
-> (Allwinner H700 / Mali-G31, 640×480), **RG40XX-V** and **RG35XX-SP** (H700 / Mali-G31).
-> Both 16:9 and 4:3 panels get an exact per-panel framing (see *Displays*). **All testing
-> to date has been on Knulli**;
-> other PortMaster CFWs (muOS, ArkOS, ROCKNIX, AmberELEC) are expected to work but are
-> untested. See `portmaster/NOTES.md`.
+> Status: **playable** — boots, renders on the GPU, plays and saves.
+> **Supported device: TrimUI Smart Pro** (Allwinner A133 / PowerVR GE8300, 1280×720) on
+> Knulli. Other 16:9 720p handhelds should behave the same but are untested. 4:3 panels
+> (Anbernic RG40XX-H / RG40XX-V / RG35XX-SP were tried) boot and play, but their framing
+> is **experimental and not part of this release** — see *Displays*. Other PortMaster
+> CFWs (muOS, ArkOS, ROCKNIX, AmberELEC) are untested. See `portmaster/NOTES.md`.
 
 ## Install
 
@@ -90,18 +89,15 @@ multiple of it — 720p works out to ~2.25×. The framing cluster (see Configura
 `ui_scale_fix` / `field_zoom_fix` / `font_snap`, on by default) replaces that with an
 exact whole-number scale per panel:
 
-* **16:9 panels are its home turf, and 720p looks best in practice** — the canvas becomes
+* **16:9 at 720p is the supported framing** (the TrimUI Smart Pro) — the canvas becomes
   640×360 at exactly 2×, the field is drawn at 4×4 panel px per art px (320×180 art px
   visible, the ct_nx Switch framing), and text lands on the pixel font's own grid.
-* **4:3 panels (640×480) get their own exact framing.** Stock, the engine draws the field
-  there at a fractional zoom (~2.5×2.2 panel px per art px), squeezes every text bitmap to
-  2/3 (see `text_scale_fix`) and puts its pixel font off the grid, so everything looks
-  slightly uneven. With the defaults the field is drawn at **2×2 panel px per art px** —
-  the SNES's 256 columns on screen, 320×220 art visible, the 224-line picture letterboxed
-  by 16 px bars top and bottom like a SNES on a 240-line display — the world map at 2 px
-  with the year plate and overview centred, the UI at the engine's own 4:3 layout, and text
-  from a second bundled pixel font (*PixelMplus10*) drawn 1:1 at exactly 2×, so text pixels
-  are the same size as art pixels.
+* **4:3 panels (640×480) are experimental.** The framing cluster can draw them at an exact
+  2×2 panel px per art px (the SNES's 256 columns on screen, 320×220 art visible, 16 px
+  letterbox bars, the UI at the engine's own 4:3 layout, and text from a second bundled
+  pixel font, *PixelMplus10*, drawn 1:1 at 2×), but the result did not hold up well enough
+  in testing to call supported. It is left in for anyone who wants to experiment; the
+  per-key notes under *Framing / scale* describe what the 4:3 branch of each auto rule does.
 * **Don't chase integer scaling on 480p panels** with `render_scale 0.5` +
   `render_filter nearest`: the engine scales its UI text down along with the art,
   and at 320×240 internal the text is unreadable.
