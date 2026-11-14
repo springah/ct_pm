@@ -6,7 +6,7 @@ explicitly deferred. Tick as you go; delete the file (or rename to CHANGELOG not
 
 ## Release gate (must be done before tagging)
 
-- [ ] **Bump `CT_VERSION`** in `source/version.h` to `1.0.0-beta.10` (package.sh reads it;
+- [x] **Bump `CT_VERSION`** in `source/version.h` to `1.0.0-beta.10` (package.sh reads it;
       the first line of `log.txt` reports it).
 - [ ] **Fresh-install test on the TrimUI** from the packaged zip, not a dev tree:
       extract `ct-1.0.0-beta.10.zip` into `ports/`, copy the APK files in, first launch
