@@ -1,8 +1,8 @@
 // harness_stubs.c — load-test-only placeholders for the app-layer functions that
 // imports.c's table points at (prefs/gfx/movie/config/util). They let the table
 // LINK so the resolver can run; they are NEVER called by harness_load.c (it does
-// not execute guest code). Real implementations come from prefs.c/gfx.c/
-// movie_player.c/config.c/util.c when those are ported in milestone #3.
+// not execute guest code). The real binary gets these from prefs.c/gfx.c/
+// movie_player.c/config.c/util.c; this file is for the bring-up harness only.
 #include <stddef.h>
 #include "config.h"
 #include "prefs.h"
@@ -19,7 +19,7 @@ int screen_height = 720;
 int  ret0(void)            { return 0; }
 int  retm1(void)           { return -1; }
 void cpu_boost(int on)     { (void)on; }
-void tls_setup_guard(void) { /* milestone #3: -> os_tls_init() */ }
+void tls_setup_guard(void) { /* the real one calls os_tls_init() */ }
 
 // prefs.c
 void        prefs_init(const char *p)                 { (void)p; }

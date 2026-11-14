@@ -1,4 +1,4 @@
-/* config.h -- Chrono Trigger Switch wrapper configuration
+/* config.h -- Chrono Trigger loader configuration (build constants + config.txt)
  *
  * This software may be modified and distributed under the terms
  * of the MIT license. See the LICENSE file for details.
@@ -7,9 +7,8 @@
 #ifndef __CONFIG_H__
 #define __CONFIG_H__
 
-// Memory reserved for the two .so load images. The rest of the heap backs both
-// engine malloc and mesa GPU textures (field maps need the bulk) -- see
-// __libnx_initheap in main.c.
+// Switch only: memory reserved for the two .so load images out of the newlib
+// heap (see __libnx_initheap in main.c). Linux lets glibc/mmap handle it.
 #define SO_HEAP_RESERVE_MB 96
 
 // The engine (libchrono.so) and its C++ runtime (libc++_shared.so). The Java-side
@@ -29,8 +28,8 @@
 extern int screen_width;
 extern int screen_height;
 
-// Default UI language. "default" auto-detects the system language (from $LANG,
-// see os_system_language) and collapses it onto one of the codes resources.bin
+// Default UI language. "default" auto-detects the system locale ($LC_ALL, then
+// $LC_MESSAGES, then $LANG; see os_system_language) and collapses it onto one of the codes resources.bin
 // ships; anything unsupported falls back to English. A concrete code
 // (en/ja/de/it/es/fr/zh/zh-Hant/ko) pins that language instead.
 #define LANG_DEFAULT "default"

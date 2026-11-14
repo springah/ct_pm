@@ -86,8 +86,8 @@ Run recipe (headless, software GL — SLOW, not visual):
 cd <gamedir>; GAMEDIR=$PWD SDL_VIDEODRIVER=offscreen EGL_PLATFORM=surfaceless \
   SDL_AUDIODRIVER=dummy CT_WINDOWED=1 LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe ./ct
 ```
-Full build cmd: all source/*.c EXCEPT movie_player.c, + portmaster/{os_linux,movie_stub,
-compat_libc}.c, link `$(sdl2-config --libs) -lGLESv2 -lEGL $(pkg-config --libs freetype2)
+Full build cmd at the time (today: `portmaster/build.sh`): all source/*.c EXCEPT
+movie_player.c, + portmaster/{os_linux,movie_stub,compat_libc}.c, link `$(sdl2-config --libs) -lGLESv2 -lEGL $(pkg-config --libs freetype2)
 -lpthread -lm -ldl`. ⚠️ gotcha found+fixed: Linux `egl_init()` must return `==0` (os_gfx_init
 is 0-on-success; egl_init is 1-on-success) — got it backwards first and aborted despite OK GL.
 
@@ -170,15 +170,11 @@ diagonally (even-width ones look fine — the giveaway). Verified on the TrimUI:
 `CT_OSK_TEST=1` pops the keyboard at boot; an interactive pass returned `rc=0 name='Claude'`.
 
 ## Screenshot (port.json image)
-`pkg/ct/screenshot.png` is referenced by port.json. It's generated from the user's own game,
-not committed (the repo ships no game art — same stance as the .so/assets): boot with
-`CT_CAPTURE=1` (writes frame_NNNNN.ppm + latest.ppm every 300 frames via os_gfx_capture),
-then capture an **in-game (field/battle)** frame — PortMaster requires a **4:3,
-≥640×480 gameplay** screenshot (NOT the 16:9 title). e.g.
-`Image.open('latest.ppm').resize((640,480)).save('screenshot.png')` from a gameplay frame.
-Ships in the zip (assembled by `portmaster/package.sh`). ⚠️ no screenshot is committed
-(the path is gitignored — it comes from the user's own game via CT_CAPTURE); capture a
-4:3 ≥640×480 gameplay shot before any official submission.
+`pkg/ct/screenshot.png` is referenced by port.json and gameinfo.xml and ships in the zip
+(assembled by `portmaster/package.sh`). The committed one is a 1280×720 gameplay frame from
+the TrimUI, captured with `CT_CAPTURE=1` (writes frame_NNNNN.ppm + latest.ppm every 300
+frames via os_gfx_capture) and converted with Pillow. PortMaster reviewers have preferred
+4:3 ≥640×480 gameplay shots historically; `build_release.py` does not check dimensions.
 
 ## Backlog / next time (codebase-review findings, 2026-06-28)
 Health items surfaced in a code review — not blockers, "do when convenient":
@@ -198,9 +194,7 @@ Health items surfaced in a code review — not blockers, "do when convenient":
 - **Split the monolithic units (in progress).** The Linux crash + termination
   signal handlers are now out of `main.c` in `portmaster/crash.c`
   (`ct_install_crash_handler` / `ct_term_requested`, declared in `crash.h`).
-  Still chunky: `jni_fake.c` (~1055), `imports.c` / `main.c` (~847 each),
+  Still chunky: `jni_fake.c` (~1055), `imports.c` / `main.c` (~950 each),
   `opensles.c` (~749). Next easy carve from `main.c`: the JNI entry-point
   resolve/bind table. (Shim switchboards like `jni_fake.c` are inherently large
   — lower priority.)
-- **Screenshot** re-capture (4:3 ≥640×480 gameplay) — see the section above and
-  `multiverse/`. Still the one hard gate on an official PortMaster submission.

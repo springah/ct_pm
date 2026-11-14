@@ -22,9 +22,6 @@
 typedef struct CtAsset CtAsset;
 typedef struct CtAssetDir CtAssetDir;
 
-// returns 1 if the named asset (path relative to the assets root) exists.
-int asset_exists(const char *name);
-
 // open a real fd onto an asset for the engine's streaming/mmap paths.
 // returns the fd (>=0) and fills *out_off (always 0) and *out_len; -1 on miss.
 int asset_open_fd(const char *name, int64_t *out_off, int64_t *out_len);

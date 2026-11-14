@@ -7,8 +7,8 @@
 // gamepad. swkbdShow() is blocking (like the Switch applet and like movie_play),
 // runs on the main/GL thread from jni_ime_service(), and returns the entered text.
 //
-// Rendering reuses gfx_render_text_rgba() (FreeType on the bundled ChronoType
-// font) so the keyboard matches the game's look. GL state is saved/restored by
+// Rendering reuses gfx_render_text_rgba() (FreeType on the bundled pixel font
+// gfx.c picked for the panel) so the keyboard matches the game's look. GL state is saved/restored by
 // calling cocos2d::GL::invalidateStateCache afterwards (osk_set_gl_invalidate),
 // the same trick movie_player.c uses.
 #define _GNU_SOURCE

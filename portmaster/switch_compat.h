@@ -34,7 +34,6 @@ typedef pthread_mutex_t Mutex;
 static inline void mutexInit(Mutex *m)    { pthread_mutex_init(m, NULL); }
 static inline void mutexLock(Mutex *m)    { pthread_mutex_lock(m); }
 static inline void mutexUnlock(Mutex *m)  { pthread_mutex_unlock(m); }
-static inline int  mutexTryLock(Mutex *m) { return pthread_mutex_trylock(m) == 0; }
 
 // threads / sleep
 #define CUR_THREAD_HANDLE 0u

@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# package.sh -- assemble a PortMaster-installable ct_pm.zip from portmaster/pkg/
-# plus the freshly-built `ct` binary. Whitelist staging: only known files are
+# package.sh -- assemble a PortMaster-installable ct-<version>.zip from
+# portmaster/pkg/ plus the freshly-built `ct` binary. Whitelist staging: only known files are
 # copied in, so the user's commercial game data (libchrono.so / libc++_shared.so
 # / assets/) and dev cruft (ct.bak, log.txt, saves) can NEVER leak into the zip.
 #
 # The zip extracts into /roms/ports/, yielding the runtime layout:
 #   Chrono Trigger.sh
+#   gameinfo.xml
 #   ct/{port.json, ct, font.ttf, font-4x3.ttf, screenshot.png, libs.aarch64/, licenses/}
 # The user drops their own libchrono.so/libc++_shared.so/assets/ into ct/ on
 # first run (the launcher gates on them).

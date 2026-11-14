@@ -1,4 +1,4 @@
-/* main.c -- Chrono Trigger (cocos2d-x 3.14.1) Switch wrapper entry point
+/* main.c -- Chrono Trigger (cocos2d-x 3.14.1) loader entry point
  *
  * This software may be modified and distributed under the terms
  * of the MIT license. See the LICENSE file for details.
@@ -158,7 +158,7 @@ static void set_screen_size(int w, int h) {
 }
 
 // ---------------------------------------------------------------------------
-// EGL / GLES2 context on the default NWindow
+// EGL / GLES2 context (Switch: the default NWindow; Linux: os_gfx_* over SDL2)
 // ---------------------------------------------------------------------------
 
 #ifndef __SWITCH__
@@ -288,7 +288,7 @@ static void resolve_entry_points(void) {
 static void *thiz; // fake MainActivity instance handed to the JNI entry points
 
 // ---------------------------------------------------------------------------
-// input -- Switch HID -> cocos keyboard + controller events
+// input -- pad state (Switch HID / os_input_poll) -> cocos keyboard + controller events
 // Android keycodes (keyboard path) and cocos2d::Controller::Key (controller path)
 // ---------------------------------------------------------------------------
 
@@ -298,7 +298,6 @@ static void *thiz; // fake MainActivity instance handed to the JNI entry points
 #define AK_DDOWN  20
 #define AK_DLEFT  21
 #define AK_DRIGHT 22
-#define AK_DCENTER 23
 #define AK_ENTER  66
 #define AK_MENU   82
 #define AK_NONE   (-1)
@@ -393,8 +392,9 @@ static void update_keys(void) {
 static int lang_index(void) {
   const char *l = config.language;
 #ifndef __SWITCH__
-  // "default" = auto-detect: resolve the system language ($LANG) onto one of
-  // the codes below (regional variants collapse; unsupported -> en).
+  // "default" = auto-detect: resolve the system locale ($LC_ALL, $LC_MESSAGES,
+  // $LANG; see os_system_language) onto one of the codes below (regional
+  // variants collapse; unsupported -> en).
   if (!strcmp(l, "default"))
     l = os_system_language();
 #endif
@@ -685,10 +685,11 @@ int main(void) {
   if (!g_libchrono_v215)
     fprintf(stderr,
             "ct: WARNING -- libchrono.so is not the supported Chrono Trigger Android "
-            "v2.1.5 build (offset fingerprint mismatch). Version-specific fixes "
-            "(FMV->title transition, CT_MOVELOG, config.language override) are "
-            "DISABLED; the game will pick its own language. The game requires the "
-            "v2.1.5 libchrono.so.\n");
+            "v2.1.5 build (offset fingerprint mismatch). Every version-specific "
+            "patch is DISABLED: the FMV->title transition, config.language, and "
+            "all patches.h groups (cursor, mobile UI, controller glyphs, diagonal "
+            "movement, framing/text scale). The game will pick its own language "
+            "and run with the stock mobile UI. Supply the v2.1.5 libchrono.so.\n");
 
   // Force the UI/text language to config.language regardless of what the engine
   // detects. resources.bin contains all languages under Localize/<code>/; the

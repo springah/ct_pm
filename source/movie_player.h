@@ -1,4 +1,4 @@
-/* movie_player.h -- FMV cutscene playback for the Chrono Trigger Switch port
+/* movie_player.h -- FMV cutscene playback (bundled FFmpeg decode -> GL quad)
  *
  * This software may be modified and distributed under the terms
  * of the MIT license. See the LICENSE file for details.
@@ -8,7 +8,8 @@
 #define __MOVIE_PLAYER_H__
 
 // Play the named cutscene (e.g. "008.dat", an XOR-obfuscated MP4 in assets/).
-// Blocking; returns when the clip ends or the player skips with A/B/+. Returns 0
+// Blocking; returns when the clip ends or the player skips (A/B/Start/Select on
+// Linux; A/B/+ on Switch). Returns 0
 // if the file was not found (caller should then just continue).
 int movie_play(const char *name);
 

@@ -37,11 +37,10 @@ _Thread_local volatile int os_tls_pad[2 << 12] = {0};
 __attribute__((used)) int os_tls_touch(void) { return os_tls_pad[0]++; }
 
 void os_tls_init(void) {
-    // Touch the pad so the TU/thread actually instantiates its static TLS, then
-    // seed the canary the .so expects. The matching __stack_chk_guard data
-    // symbol is exported to the guest via imports.c.
+    // Touch the pad so this thread actually instantiates its static TLS. The
+    // canary itself is the __stack_chk_guard data symbol exported to the guest
+    // via imports.c; nothing is written at tpidr_el0 + 0x28 on glibc.
     os_tls_touch();
-    // value mirrors source/util.c (0x0123456789ABCDEF) — keep in sync.
 }
 
 // ===========================================================================
@@ -81,8 +80,6 @@ void os_code_free(os_code_map *m) {
     if (m && m->base) munmap(m->base, m->size);
     if (m) { m->base = NULL; m->size = 0; m->opaque = NULL; }
 }
-
-void os_heap_init(void) { /* glibc handles it; nothing to carve */ }
 
 // ===========================================================================
 // Graphics: SDL2 window + GLES2 context.
@@ -162,7 +159,6 @@ void os_gfx_capture(const char *path) {
 }
 
 void  os_gfx_swap(void)  { if (s_win) SDL_GL_SwapWindow(s_win); }
-void *os_gl_get_proc(const char *name) { return SDL_GL_GetProcAddress(name); }
 void  os_gfx_shutdown(void) {
     if (s_ctx) SDL_GL_DeleteContext(s_ctx);
     if (s_win) SDL_DestroyWindow(s_win);
@@ -333,15 +329,14 @@ void os_input_poll(os_input_state *st) {
     if (ly < -OS_STICK_DEADZONE) b |= OS_BTN_UP;
     if (ly >  OS_STICK_DEADZONE) b |= OS_BTN_DOWN;
 
-    // -- CT_STICKLOG: left-stick Y diagnostic -------------------------------
-    // The TrimUI pad (GUID 0300...02000000) is isGC=1 via the PortMaster
-    // framework's gamecontrollerdb, so our fallback mapping is NOT applied and
-    // the stick Y comes out wrong (down dead / reads as up). Set CT_STICKLOG=1
-    // to dump the *mapped* LEFTX/LEFTY (post-gamecontrollerdb), the synthesised
-    // d-pad bits, and EVERY raw joystick axis a0..aN. Wiggle the stick, capture
-    // log.txt, and read off which physical axis the stick Y is really on and its
-    // sign -> then override the GUID mapping. Throttled to fire only on movement.
-    if (getenv("CT_STICKLOG")) {
+    // -- CT_STICKLOG: stick-axis diagnostic ----------------------------------
+    // Set CT_STICKLOG=1 to dump the *mapped* LEFTX/LEFTY (post-gamecontrollerdb),
+    // the synthesised d-pad bits, and EVERY raw joystick axis a0..aN. This is how
+    // the TrimUI's inverted stick Y was found (fixed below); keep it for the next
+    // pad whose framework mapping is off. Throttled to fire only on movement.
+    static int sticklog = -1;
+    if (sticklog < 0) sticklog = getenv("CT_STICKLOG") ? 1 : 0;
+    if (sticklog) {
         SDL_Joystick *j = SDL_GameControllerGetJoystick(c);
         int na = j ? SDL_JoystickNumAxes(j) : 0;
         if (na > 8) na = 8;
@@ -442,7 +437,7 @@ void os_sleep_ms(unsigned ms) { usleep((useconds_t)ms * 1000u); }
 
 void os_log(const char *fmt, ...) {
     // Quiet by default for release builds; export CT_LOG=1 to restore the
-    // startup/input/error logging (the crash signal handler in main.c always
+    // startup/input/error logging (the crash signal handler in crash.c always
     // logs regardless — that path doesn't go through here).
     static int en = -1;
     if (en < 0) en = getenv("CT_LOG") ? 1 : 0;

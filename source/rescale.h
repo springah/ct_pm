@@ -11,7 +11,6 @@
 // The Switch renders at native resolution (vsync-locked 60); the interpose
 // compiles away so shared call sites need no #ifdefs.
 static inline void ct_rescale_setup(int w, int h) { (void)w; (void)h; }
-static inline int  ct_rescale_active(void) { return 0; }
 static inline void ct_rescale_engine_size(int *w, int *h) { (void)w; (void)h; }
 static inline unsigned ct_rescale_redirect_fb(unsigned fb) { return fb; }
 static inline void ct_rescale_begin_frame(void) {}
@@ -25,8 +24,6 @@ static inline void ct_rescale_set_gl_invalidate(void (*fn)(void)) { (void)fn; }
 // (call after egl_init). Falls back to native resolution (inactive) on any
 // failure or when render_scale/CT_RENDER_SCALE resolves to ~1.0.
 void ct_rescale_setup(int win_w, int win_h);
-
-int  ct_rescale_active(void);
 
 // The size the engine must be told at nativeInit: internal when active,
 // window otherwise. Leaves *w/*h untouched only if setup was never called.

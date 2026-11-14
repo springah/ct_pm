@@ -17,10 +17,10 @@ the zip from it.
 | MV-New repo path | from here | notes |
 | --- | --- | --- |
 | `ports/ct/port.json` | `portmaster/pkg/port.json` | **`name` must be `"ct.zip"`** — see below |
-| `ports/ct/Chrono Trigger.sh` | `portmaster/pkg/Chrono Trigger.sh` | drop the `# PORTMASTER:` header line (upstream ports carry none) |
+| `ports/ct/Chrono Trigger.sh` | `portmaster/pkg/Chrono Trigger.sh` | as is |
 | `ports/ct/gameinfo.xml` | `portmaster/pkg/gameinfo.xml` | required; its `<image>` must match the screenshot filename |
 | `ports/ct/README.md` | `ct.md` | the asset-extraction guide shown to users |
-| `ports/ct/screenshot.png` | **TODO — the one hard gate** | see below |
+| `ports/ct/screenshot.png` | `portmaster/pkg/ct/screenshot.png` | committed: 1280×720 gameplay; see below |
 | `ports/ct/ct/...` | the built `ct`, `font.ttf`, `font-4x3.ttf`, `libs.aarch64/`, `licenses/` | gitignored here, so they must be committed in the fork |
 
 ## Rules worth knowing before you package
@@ -45,11 +45,10 @@ the zip from it.
 1. Confirm the current inclusion process with the PortMaster crew on Discord. MV-New has
    no `CONTRIBUTING` file and a 168-byte README, so the human gate is still the only
    documented one. Ask specifically whether MV-New accepts direct PRs.
-2. **Capture the gameplay screenshot** (the one hard blocker). It is not device-locked:
-   `screen_width`/`screen_height` in `config.txt` plus `CT_WINDOWED=1` will render a real
-   640×480 adaptive-camera frame on any device, and `CT_CAPTURE=1` dumps it. It does need
-   a short play session to reach a field or battle frame — capture fires at frame 60 then
-   every 300, with no on-demand hotkey.
+2. **Screenshot.** A 1280×720 gameplay frame is committed. Reviewers have historically
+   preferred 4:3 ≥640×480; if asked, `screen_width`/`screen_height` in `config.txt` plus
+   `CT_WINDOWED=1` renders a 640×480 frame on any device and `CT_CAPTURE=1` dumps it
+   (fires at frame 60 then every 300, no hotkey — needs a short play session).
 3. Multi-CFW smoke test (AmberELEC / ArkOS / ROCKNIX / muOS). Note that every device we
    own runs Knulli, so exactly one CFW has ever been exercised; a `#testing-n-dev` thread
    is the realistic way to cover the rest. The untested surface is `$DEVICE_ARCH` from an

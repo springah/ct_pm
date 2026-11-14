@@ -2,9 +2,10 @@
 //
 // Goal: the loader/engine-glue code in source/ (so_util, main, util, gfx,
 // opensles, movie_player) should call ONLY these os_* entry points for anything
-// OS-specific. Two backends implement them:
-//   * os_switch.c  — wraps libnx   (refactor of the current source/*.c calls)
+// OS-specific. One backend implements them here:
 //   * os_linux.c   — wraps SDL2 + POSIX (the PortMaster aarch64 target)
+// (The Switch build, maintained separately in ct_nx, keeps its libnx calls
+// inline under #ifdef __SWITCH__ rather than behind this header.)
 //
 // Everything else (ELF parse/relocate, bionic shims, JNI fake, ffmpeg) is
 // already OS-agnostic and stays shared.
@@ -46,28 +47,20 @@ int  os_code_protect(void *addr, size_t size, bool exec); // exec? R+X : R+W
 void os_code_free(os_code_map *m);
 
 // ---------------------------------------------------------------------------
-// Heap — the engine wants the bulk of RAM (textures/render targets).
-// Switch: __libnx_initheap + svcSetHeapSize carve a big newlib heap.
-// Linux:  no-op; glibc malloc + the kernel handle it. (RAM budget is the real
-//         constraint on the 1 GB TrimUI — render < 720p / cap texture budget.)
-// ---------------------------------------------------------------------------
-void os_heap_init(void);
-
-// ---------------------------------------------------------------------------
 // TLS / stack-guard — the .so reads its stack canary from tpidr_el0 + 0x28.
 // Switch: armSetTlsRw() repoints tpidr_el0 at a custom block (util.c).
 // Linux:  CANNOT hijack tpidr_el0 (glibc owns the TCB). Instead a large host
 //         thread_local forces glibc to reserve enough static TLS so the guest's
-//         tpidr-relative access stays in valid memory; os_tls_init() seeds the
-//         canary value. __stack_chk_guard is also exported as a data symbol via
-//         imports.c. Call once per thread that will run guest code.
+//         tpidr-relative access stays in valid memory. The canary itself is the
+//         __stack_chk_guard data symbol exported via imports.c. Call once per
+//         thread that will run guest code.
 // ---------------------------------------------------------------------------
 void os_tls_init(void);
 
 // ---------------------------------------------------------------------------
-// Graphics — a current GLES2 context + buffer swap. cocos2d-x only ever asks
-// the loader for eglGetProcAddress, so os_gl_get_proc() is what the game's
-// imported eglGetProcAddress is wired to.
+// Graphics — a current GLES2 context + buffer swap. (The game's imported
+// eglGetProcAddress is served by imports.c directly, wrapping the GL entry
+// points the render-scale and shader-cache layers intercept.)
 // Switch: nwindowGetDefault + EGL on EGL_DEFAULT_DISPLAY + eglSwapBuffers.
 // Linux:  SDL_CreateWindow(SDL_WINDOW_OPENGL) + SDL_GL_CreateContext +
 //         SDL_GL_SwapWindow + SDL_GL_GetProcAddress.
@@ -75,7 +68,6 @@ void os_tls_init(void);
 // ---------------------------------------------------------------------------
 int   os_gfx_init(int req_w, int req_h, int *out_w, int *out_h);
 void  os_gfx_swap(void);
-void *os_gl_get_proc(const char *name);
 void  os_gfx_shutdown(void);
 // debug: glReadPixels the current back buffer to a binary PPM (P6). Used to grab
 // a real frame off the device GPU for inspection. No-op if no context.
@@ -117,12 +109,12 @@ const char *os_system_language(void);
 bool        os_is_focused(void);
 
 // ---------------------------------------------------------------------------
-// Misc. Threads/mutexes are NOT abstracted: use POSIX (pthread/usleep) directly
-// in shared code — both newlib (devkitA64) and glibc provide them. The Switch
-// `mutexLock`/`svcSleepThread` call sites become pthread_mutex/usleep.
+// Misc. Threads/mutexes are NOT abstracted: shared code keeps the libnx names
+// (mutexLock, svcSleepThread, ...) and switch_compat.h maps them onto pthread /
+// POSIX on Linux.
 // ---------------------------------------------------------------------------
 void os_sleep_ms(unsigned ms);
-void os_log(const char *fmt, ...);   // debugPrintf on Switch, stderr on Linux
+void os_log(const char *fmt, ...);   // stderr (-> log.txt), quiet unless CT_LOG=1
 
 #ifdef __cplusplus
 }

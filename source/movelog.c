@@ -5,8 +5,8 @@
  * How the trampoline works
  * ------------------------
  * hook_arm64(addr, dst) overwrites the first 16 bytes of the target function
- * with a position-independent LDR X17, #8 / BR X17 / <64-bit dst> sequence.
- * That's exactly 3 words (12 bytes), but the loader aligns hook slots to 16.
+ * with a position-independent LDR X17, #8 / BR X17 / <64-bit dst> sequence
+ * (two instructions plus the 8-byte address: 16 bytes).
  * The original 4 instructions (16 bytes) that were there are saved into a
  * small heap trampoline buffer so the real function can still run: we call the
  * trampoline, let it fall through to NanameHantei+16, done.  After it returns
@@ -18,9 +18,8 @@
  *
  * Compilation note
  * ----------------
- * This file uses GNU C nested function syntax (__attribute__((constructor))) --
- * it is plain C99 + POSIX.  No C++ required.  Link with the same flags as the
- * rest of source/.
+ * Plain C99 + POSIX (mmap for the trampoline page).  No C++ required.  Link
+ * with the same flags as the rest of source/.
  */
 
 #include <stdint.h>
@@ -30,8 +29,8 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
-#include "so_util.h"   /* so_module, hook_arm64, so_find_addr */
-#include "util.h"      /* os_log / debugPrintf */
+#include "so_util.h"   /* so_module, hook_arm64 */
+#include "util.h"      /* debugPrintf */
 
 /* -------------------------------------------------------------------------
  * Offsets verified against libchrono.so v2.1.5 disassembly (see header).

@@ -22,24 +22,14 @@ size_t strlcpy(char *dst, const char *src, size_t size);
 
 void cpu_boost(int on);
 
-// libff4.so reads its stack-protector canary from tpidr_el0 + 0x28.
+// libchrono.so reads its stack-protector canary from tpidr_el0 + 0x28.
 void tls_setup_guard(void);
 
 int ret0(void);
 int retm1(void);
 
-static inline void* armGetTlsRw(void) {
-  void* ret;
-  __asm__ ("mrs %x[data], s3_3_c13_c0_2" : [data] "=r" (ret));
-  return ret;
-}
-
 static inline void armSetTlsRw(void *addr) {
   __asm__  ("msr s3_3_c13_c0_2, %0" : : "r"(addr));
-}
-
-static inline uint64_t umin(uint64_t a, uint64_t b) {
-  return (a < b) ? a : b;
 }
 
 #endif

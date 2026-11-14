@@ -48,8 +48,6 @@ static void (*g_gl_invalidate)(void); // cocos2d::GL::invalidateStateCache
 
 void ct_rescale_set_gl_invalidate(void (*fn)(void)) { g_gl_invalidate = fn; }
 
-int ct_rescale_active(void) { return g_active; }
-
 void ct_rescale_engine_size(int *w, int *h) {
   if (w) *w = g_active ? g_int_w : g_win_w;
   if (h) *h = g_active ? g_int_h : g_win_h;

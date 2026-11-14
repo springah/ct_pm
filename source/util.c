@@ -53,6 +53,18 @@ int debugPrintf(char *text, ...) {
   va_end(list);
   fflush(s_log);
   mutexUnlock(&s_log_lock);
+#elif !defined(__SWITCH__)
+  // Release builds: the patch/config/shim traces go to stderr (the launcher
+  // redirects it to log.txt) when CT_LOG=1, the same gate as os_log. Off, they
+  // cost one static read.
+  static int en = -1;
+  if (en < 0) en = getenv("CT_LOG") ? 1 : 0;
+  if (en) {
+    va_list list;
+    va_start(list, text);
+    vfprintf(stderr, text, list);
+    va_end(list);
+  }
 #else
   (void)text;
 #endif

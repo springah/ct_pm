@@ -2,7 +2,7 @@
  *
  * Converting wrappers for the cases where bionic and newlib differ in struct
  * layout, flag values or available functions; matching calls pass through from
- * imports.c. Networking is stubbed (no network on the Switch port).
+ * imports.c. Networking is stubbed (the game needs none offline).
  *
  * Modified and distributed under the terms of the MIT license; see LICENSE.
  */

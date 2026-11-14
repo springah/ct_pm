@@ -59,13 +59,6 @@ static void iolog_tick(void) {
             g_aa_reads, g_aa_bytes >> 10, g_aa_seeks);
 }
 
-int asset_exists(const char *name) {
-  char path[1024];
-  resolve(path, sizeof(path), name);
-  struct stat st;
-  return stat(path, &st) == 0 && (st.st_mode & S_IFMT) == S_IFREG;
-}
-
 int asset_open_fd(const char *name, int64_t *out_off, int64_t *out_len) {
   char path[1024];
   resolve(path, sizeof(path), name);

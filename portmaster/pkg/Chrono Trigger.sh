@@ -60,11 +60,14 @@ $GAMEDIR/
   exit 1
 fi
 
-# --- fonts: ship ChronoType (font.ttf); self-heal a CJK fallback for ja/ko/zh --
+# --- fonts: the pixel fonts ship (font.ttf / font-4x3.ttf); copy in a system
+# font as a fallback face for glyphs they lack (CJK for ja/ko/zh where the CFW
+# has such a font, otherwise DejaVu for symbols) -----------------------------
 if [ ! -f "$GAMEDIR/fonts/standard.ttf" ]; then
   mkdir -p "$GAMEDIR/fonts"
   for f in /usr/share/emulationstation/resources/DroidSansFallbackFull.ttf \
            "$controlfolder/resources/NotoSansSC-Regular.ttf" \
+           /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf \
            /usr/share/fonts/dejavu/DejaVuSans.ttf; do
     [ -f "$f" ] && cp -f "$f" "$GAMEDIR/fonts/standard.ttf" && break
   done
@@ -83,12 +86,12 @@ export GAMEDIR
 $ESUDO chmod +x "$GAMEDIR/ct" 2>/dev/null
 
 # --- RAM: add compressed swap (zram) for the session --------------------------
-# This box is 1 GB with no swap. The engine peaks well past that when a heavy
+# The TrimUI Smart Pro has 1 GB and no swap. The engine peaks well past that when a heavy
 # scene loads right after the attract FMV (whose decoder heap is still resident),
 # and the kernel OOM-kills the game. A ~768 MB zram device gives that spike a
 # compressed-RAM overflow to land in instead of dying. Torn down on exit.
 ZRAM_DEV=""
-$ESUDO modprobe zram >/dev/null 2>&1   # built as a module on this kernel (4.9.x)
+$ESUDO modprobe zram >/dev/null 2>&1   # a module on the TrimUI's 4.9 kernel; no-op elsewhere
 if [ -e /sys/class/zram-control/hot_add ] && [ -z "$(cat /proc/swaps | grep zram)" ]; then
   ZN=$(cat /sys/class/zram-control/hot_add 2>/dev/null)
   if [ -n "$ZN" ] && [ -e "/sys/block/zram${ZN}/disksize" ]; then

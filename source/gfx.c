@@ -1,4 +1,4 @@
-/* gfx.c -- system-font text rasterisation (FreeType on the Switch shared font)
+/* gfx.c -- system-font text rasterisation (FreeType on the bundled pixel fonts)
  *
  * This software may be modified and distributed under the terms
  * of the MIT license. See the LICENSE file for details.
@@ -18,7 +18,8 @@
 #include "util.h"
 #include "config.h"
 
-// We load the full set of Switch shared fonts and fall back across them per
+// We load several faces (the bundled pixel font first, then whatever CJK-capable
+// system font exists; on Switch the shared fonts) and fall back across them per
 // glyph, so Latin, CJK and symbol coverage all work (the engine may ask us to
 // draw Japanese with the system font).
 #define MAX_FACES 6
@@ -395,15 +396,17 @@ unsigned char *gfx_render_text_rgba(const char *text, int font_size,
   if (!g_ok || !text)
     return NULL;
   int px = font_size > 0 ? font_size : 16;
-  // Per-font visual-size scale (CT_FONT_SCALE). Pixel fonts like ChronoType render
-  // glyphs small within their em, so scale the whole cell up to match the engine's
-  // intended on-screen size. Default 1.0 (system-font behaviour).
+  // Visual-size scale (config font_scale / CT_FONT_SCALE; auto = 1.0 on narrow
+  // panels, 1.25 on wide, resolved in gfx_init). Pixel fonts like ChronoType
+  // render glyphs small within their em, so the whole cell scales up to match
+  // the engine's intended on-screen size.
   px = (int)(px * g_font_scale + 0.5f);
   if (px < 1) px = 1;
 
-  // The Switch shared font is visually larger per pixel than the Android font the
-  // engine's sizes target, so render glyphs a touch smaller (rpx) and centre them
-  // in the full px line cell: matches Android's size without clipping descenders.
+  // Render glyphs a touch smaller (rpx) than the line cell and centre them in it:
+  // matches the Android font's apparent size without clipping descenders. Tuned
+  // on the Switch shared font in ct_nx and kept as-is for the bundled fonts (the
+  // on-grid snapping below decides the final glyph size for pixel faces).
   int rpx = px - (px / 8 + 1);
   if (rpx < 1) rpx = 1;
   // Pixel fonts: snap the glyph size to the largest multiple of the native grid

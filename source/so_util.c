@@ -6,7 +6,7 @@
  * of the MIT license.  See the LICENSE file for details.
  *
  * Loads Android ARM64 shared objects into a reserved memory range and applies
- * the relocation types used by libff4.so.
+ * the relocation types used by libchrono.so / libc++_shared.so.
  */
 
 #ifdef __SWITCH__
@@ -370,7 +370,6 @@ int so_relocate(so_module *mod) {
     so_process_relr(mod, (const Elf64_Xword *)((uintptr_t)mod->load_base + relr_off), relr_size);
   }
 
-
   return 0;
 }
 
@@ -477,13 +476,6 @@ uintptr_t so_find_addr(so_module *mod, const char *symbol) {
   return 0;
 }
 
-uintptr_t so_find_addr_rx(so_module *mod, const char *symbol) {
-  const uintptr_t addr = so_try_find_addr_rx(mod, symbol);
-  if (!addr)
-    fatal_error("Error: could not find symbol:\n%s\n", symbol);
-  return addr;
-}
-
 uintptr_t so_try_find_addr_rx(so_module *mod, const char *symbol) {
   for (int i = 0; i < mod->num_syms; i++) {
     char *name = mod->dynstrtab + mod->syms[i].st_name;
@@ -498,55 +490,6 @@ DynLibFunction *so_find_import(DynLibFunction *funcs, int num_funcs, const char 
     if (!strcmp(funcs[i].symbol, name))
       return &funcs[i];
   return NULL;
-}
-
-int so_unload(so_module *mod) {
-  if (mod->load_base == NULL)
-    return -1;
-
-  if (mod->so_base) {
-    // someone forgot to free the temp data
-    so_free_temp(mod);
-  }
-
-#ifdef __SWITCH__
-  // remap everything as RW
-  for (int i = 0; i < mod->phnum; i++) {
-    const Elf64_Phdr *p = &mod->phdr[i];
-    if (p->p_type != PT_LOAD || !(p->p_flags & PF_X))
-      continue;
-    const u64 seg_start = ((u64)mod->load_virtbase + p->p_vaddr) & ~0xFFFull;
-    const u64 seg_end = ALIGN_MEM((u64)mod->load_virtbase + p->p_vaddr + p->p_memsz, 0x1000);
-    svcSetProcessMemoryPermission(envGetOwnProcessHandle(), seg_start, seg_end - seg_start, Perm_Rw);
-  }
-  // unmap everything
-  svcUnmapProcessCodeMemory(envGetOwnProcessHandle(), (u64)mod->load_virtbase, (u64)mod->load_base, mod->load_size);
-
-  // release virtual address range
-  virtmemLock();
-  virtmemRemoveReservation(mod->load_memrv);
-  virtmemUnlock();
-#else
-  if (mod->load_memrv) {
-    os_code_free((os_code_map *)mod->load_memrv);
-    free(mod->load_memrv);
-    mod->load_memrv = NULL;
-  }
-#endif
-
-  // remove from list
-  if (so_list == mod) {
-    so_list = mod->next;
-  } else {
-    for (so_module *m = so_list; m; m = m->next) {
-      if (m->next == mod) {
-        m->next = mod->next;
-        break;
-      }
-    }
-  }
-
-  return 0;
 }
 
 // matches the layout bionic/libunwind expect

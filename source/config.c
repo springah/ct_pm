@@ -86,10 +86,8 @@ int read_config(const char *file) {
   config.screen_height = -1;
   strlcpy(config.language, LANG_DEFAULT, sizeof(config.language));
   config.render_scale = 1.0f;  // native; set 0.75 on GPU-bound devices to trade
-                               // sharpness for fps. (The stock 16:9 design entry is
-                               // 568x320, so no panel is an exact integer multiple
-                               // -- 720p is 2.2535x. ui_scale_fix would make it
-                               // 640x360/exact-2x, but that patch is not ported.)
+                               // sharpness for fps. (With ui_scale_fix on, 720p
+                               // is an exact 2x of the 640x360 design.)
   strlcpy(config.render_filter, "linear", sizeof(config.render_filter));
   config.force_nearest = 1;    // crisp pixel art; A/B'd on the TrimUI (PowerVR GE8300)
   config.gl_threaded = 0;      // mesa_glthread: no-op on blob drivers (PowerVR),
@@ -155,7 +153,7 @@ int read_config(const char *file) {
   if (config.language[0] == 0)
     strlcpy(config.language, LANG_DEFAULT, sizeof(config.language));
 
-  // any key we know but never saw -> the file predates it; name them in the log
+  // any key we know but never saw -> the file predates it; name them in log.txt (CT_LOG=1)
   #define CONFIG_VAR_INT(var) if (!config_seen.var) { debugPrintf("config: %s missing, adding default\n", #var); config_needs_rewrite = 1; }
   #define CONFIG_VAR_FLOAT(var) CONFIG_VAR_INT(var)
   #define CONFIG_VAR_STR(var) CONFIG_VAR_INT(var)

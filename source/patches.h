@@ -1436,7 +1436,6 @@ static inline void apply_game_patches(so_module *mod) {
             (double)(fr.field_zoom * fr.panel_scale),
             (double)(fr.design_w / fr.field_zoom), (double)(fr.design_h / fr.field_zoom),
             (double)fr.map_zoom, config.ui_scale_fix ? "" : " [ui_scale_fix off: zoom patches skipped]");
-    // UI font size: config font_scale, else auto by panel (see config.h).
     if (config.ui_scale_fix) {
       if (config.text_scale_fix) apply_text_scale_fix(mod, fr.design_scale);
       if (config.field_zoom_fix) {
@@ -1454,7 +1453,7 @@ static inline void apply_game_patches(so_module *mod) {
           apply_map_minimap_anchor(mod, (fr.design_w - 480.0f) * 0.5f,
                                         fr.design_w * 0.5f - 128.0f * fr.map_zoom);
         // No camera patch: shifting WorldMap::setScroll moved the map but not
-        // the objects on hardware (see the note above ct_framing_resolve).
+        // the objects on hardware (see the note above apply_map_minimap_anchor).
       }
     }
     if (config.game_area_width_fix) {
