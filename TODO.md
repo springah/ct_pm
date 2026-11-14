@@ -29,7 +29,7 @@ explicitly deferred. Tick as you go; delete the file (or rename to CHANGELOG not
       then repeat warm. The README promises "noticeably smoother"; confirm it is still true
       on the current Knulli build.
 - [ ] **Write release notes** (GitHub release body): supported device, what the user
-      supplies, the quit combo, known issues (below), and that 4:3 is experimental.
+      supplies, the quit combo, known issues (below), and that 4:3 is unsupported.
 - [ ] **Tag + Release**: `git tag v1.0.0-beta.10`, attach `ct-1.0.0-beta.10.zip`. Build
       in the pinned builder image (glibc 2.31, ffmpeg 7.1) via `portmaster/build.sh`.
 
@@ -65,28 +65,24 @@ explicitly deferred. Tick as you go; delete the file (or rename to CHANGELOG not
 
 ## Decisions to make
 
-- [ ] **4:3 code paths in the release build.** The narrow-panel branches
-      (`ct_framing_resolve` narrow rules in `source/patches.h`, the `narrow` font selection
-      in `source/gfx.c`, `font-4x3.ttf`, `font-4x3-license.txt`) stay in the tree but are
-      documented as experimental. Options: (a) ship as is; (b) keep the code but stop
-      shipping `font-4x3.ttf` and let narrow panels use `font.ttf`; (c) strip the narrow
-      branches entirely until the rework (below). Leaning (a) for beta.10 since the code is
-      inert on 16:9, but pick one and say so in the release notes.
-- [ ] **Screenshot aspect for the PortMaster submission.** The committed one is 1280×720
-      (correct for the supported device). Reviewers have historically preferred 4:3
-      ≥640×480. Ask in `#testing-n-dev` before the MV-New PR rather than guess.
+- [x] **4:3 code paths in the release build.** Decided: stripped. The narrow-panel rules in
+      `ct_framing_resolve`, the `narrow` font profile in `source/gfx.c`, `font-4x3.ttf` and
+      its licence are gone (commit history has them: `git log -S narrow -- source/gfx.c`).
+      4:3 panels now run the 16:9 auto rules, unsupported.
+- [x] **Screenshot aspect.** Decided: keep the 1280×720 gameplay shot; it matches the
+      supported device.
 - [ ] **Multiverse submission timing**: beta.10 self-hosted first, submit after one round
       of outside feedback, or submit beta.10 directly? `portmaster/multiverse/README.md`
       has the checklist either way.
 
 ## Deferred past beta.10 (noted, not scheduled)
 
-- **4:3 framing rework from scratch.** The current narrow-panel path (fractional
-      `design_scale` 1.333, 2 px field, PixelMplus10 at 2×, letterbox bars) did not hold up
-      well on the RG40XX-H / RG35XX-SP. Treat it as a reference implementation, not a base:
-      the next attempt should start from what the engine's 4:3 table entry actually wants
-      and decide field zoom, UI scale and font as one design, not three independent auto
-      rules. Not part of this release.
+- **4:3 framing rework from scratch.** The removed narrow-panel path (fractional
+      `design_scale` 1.333, 2 px field, PixelMplus10 at 2×, letterbox bars; see the commit
+      that stripped it) did not hold up well on the RG40XX-H / RG35XX-SP. Treat it as a
+      reference only: the next attempt should start from what the engine's 4:3 table entry
+      actually wants and decide field zoom, UI scale and font as one design, not three
+      independent auto rules. Not part of this release.
 - **Other CFWs** (muOS, ArkOS, ROCKNIX, AmberELEC): untested. The untested surface is
       `$DEVICE_ARCH` from older `control.txt`, the host SDL2/freetype/GLES libraries, and
       the zram/cpufreq block in the launcher. Needs testers.
@@ -110,6 +106,6 @@ explicitly deferred. Tick as you go; delete the file (or rename to CHANGELOG not
   the save.
 - First session compiles shaders; expect stutter on scene changes until `shadercache/`
   is warm.
-- 4:3 panels: experimental framing, see above.
+- 4:3 panels: not supported; they run the 16:9 rules and look small.
 - The game must be the Android **v2.1.5** build; other versions boot with every patch
   disabled and the stock mobile UI (the log says so).

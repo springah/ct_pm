@@ -102,23 +102,20 @@ typedef struct {
   //                     with panel/design_scale, so the scene scale is exactly
   //                     design_scale on both axes (stock: 568x320 / 480x360 ...,
   //                     never an integer multiple of any panel).
-  //   design_scale   -- panel px per design unit. 0 = auto: wide panels a
-  //                     whole multiple of the 640-wide canvas (2 at 720p, 3 at
-  //                     1080p; under 1280 the fraction panel_w/640), narrow
-  //                     panels panel_w/480 = the engine's own 4:3 layout (1.333
-  //                     on 640x480). The engine's frame (render_scale) does not
-  //                     change the design box, only the scene scale.
+  //   design_scale   -- panel px per design unit. 0 = auto: a whole multiple of
+  //                     the 640-wide canvas (2 at 720p, 3 at 1080p; under 1280
+  //                     the fraction panel_w/640). The engine's frame
+  //                     (render_scale) does not change the design box, only the
+  //                     scene scale.
   //   game_area_width_fix -- ctr::gameArea width adaptive (hard-coded 568.0 in
   //                     stock); no-op at the stock design, required with ui_scale_fix.
   //   field_zoom_fix -- square, integer field art pixels: the fieldmap node's
   //                     setScale(1.875, 1.66667) becomes (z, z) and the view /
   //                     camera-limit sizes follow 1/z so the drawn view still
   //                     fills the canvas. Panel px per art px = z * design_scale.
-  //   field_zoom     -- z. 0 = auto (panel px per art px): wide panels the
-  //                     smallest whole size whose rows fit the engine's 432x224
-  //                     field plane (4 px at 720p, ct_nx); narrow panels the
-  //                     SNES's 256 columns on screen (2 px on 640x480, the
-  //                     224-row picture letterboxed evenly).
+  //   field_zoom     -- z. 0 = auto (panel px per art px): the smallest whole
+  //                     size whose rows fit the engine's 432x224 field plane
+  //                     (4 px at 720p, ct_nx).
   //   map_zoom_fix / map_zoom -- world-map counterpart; map_zoom 0 = auto: the
   //                     field size capped so the 256-column map window fits.
   int   ui_scale_fix;
@@ -129,25 +126,24 @@ typedef struct {
   int   map_zoom_fix;
   float map_zoom;
   // map_minimap_fix -- world-map overview (enter/exitMiniMap) at the node's
-  // stock X so it is centred on narrow panels; 0 = leave the engine's overview
-  // where the centred node puts it (A/B knob).
+  // stock X so it stays centred; 0 = leave the engine's overview where the
+  // re-anchored map node puts it (A/B knob).
   int   map_minimap_fix;
   // font_snap -- pixel fonts only render cleanly at whole multiples of their
   // native grid (gfx.c auto-detects it; an outline font is left alone).
-  //   0 = auto (default): 1 on narrow panels (font-4x3.ttf at exactly 2x),
-  //       2 on wide panels (ChronoType: half steps, 1.5x = render 3x, keep
+  //   0 = auto (default): 2 (ChronoType: half steps, 1.5x = render 3x, keep
   //       every other pixel -- pixel-exact for its 2-px strokes)
   //   1 = whole multiples only, 2 = half multiples too, 3 = off
   int   font_snap;
   // text_scale_fix -- draw system-font labels 1:1 (patches.h). Stock cocos2d
   // renders them at points x 2 and draws the sprite at design_scale / 2, which
-  // is 2/3 on a 4:3 panel: every glyph nearest-squeezed. With the fix a 12-pt
-  // label is a 16 px bitmap drawn 16 px tall on 640x480. No-op at 720p.
+  // is 1:1 only where the design scale is exactly 2 (720p native); at
+  // render_scale 0.75 or 1080p every glyph is resampled. The fix renders at
+  // the frame's own scale. No-op at 720p native.
   int   text_scale_fix;
   // font_scale -- visual size of the UI font relative to the engine's request,
-  // snapped to the nearest clean size. 0 = auto: 1.0 on narrow panels (16 / 21
-  // px requests -> 20 px = 2x font-4x3), 1.25 on wide (24 / 32 -> 32 / 40 px
-  // ChronoType at 720p). Env CT_FONT_SCALE overrides.
+  // snapped to the nearest clean size. 0 = auto: 1.25 (24 / 32 px requests ->
+  // 32 / 40 px ChronoType at 720p). Env CT_FONT_SCALE overrides.
   float font_scale;
 } Config;
 

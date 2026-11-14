@@ -137,7 +137,7 @@ ffmpeg build into `pkg/ct/libs.aarch64/` named by soname (these are gitignored b
 from `pkg/` + the built `ct` (whitelist staging, so the user's commercial files and dev
 cruft can't leak; the version comes from `source/version.h`). Zip extracts to
 `/roms/ports/`: `Chrono Trigger.sh`, `gameinfo.xml` + `ct/{port.json, ct, font.ttf,
-font-4x3.ttf, screenshot.png, libs.aarch64/, licenses/}`. port.json is `version 2`, `name
+screenshot.png, libs.aarch64/, licenses/}`. port.json is `version 2`, `name
 "ct.zip"` (the port's identity to HarbourMaster, deliberately not the download filename),
 `rtr false`, `runtime null`, `arch ["aarch64"]` (the Half-Life template — the canonical
 native, user-supplied-commercial-files port). This is the self-host / on-device

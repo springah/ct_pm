@@ -48,8 +48,8 @@ compiles and caches the GPU shaders into `shadercache/` — scene changes get sm
 once it's warm), and the mobile touch overlays replaced with proper controller UI.
 
 - Built for and tested on the **TrimUI Smart Pro (16:9, 720p)** — an exact 2× of the
-  engine's internal layout. Other 720p 16:9 handhelds should match. 4:3 panels boot and
-  play but their framing is experimental and not supported in this release.
+  engine's internal layout. Other 720p 16:9 handhelds should match. 4:3 panels are not
+  supported (they boot and play under the 16:9 rules).
 - Heavy scenes dipping on a weaker GPU? Set `render_scale 0.75` (renders smaller
   internally, upscales — trades a little sharpness for speed).
 - `language` — auto-detects; set `en fr de it es ja ko zh zh-Hant` to pin one.
@@ -62,8 +62,7 @@ once it's warm), and the mobile touch overlays replaced with proper controller U
 - The **ct_nx** loader project, on which this port is built.
 - The **PortMaster** community and toolchain.
 - **FFmpeg** (LGPL) — bundled, decode-only, for cutscene playback.
-- **Caveras** — the *ChronoType* SNES font recreation (CC BY-NC-SA), the UI font on 16:9 panels.
-- **M+ FONTS PROJECT / itouhiro** — *PixelMplus10* (M+ FONT LICENSE), the UI font on 4:3 panels.
+- **Caveras** — the *ChronoType* SNES font recreation (CC BY-NC-SA), the UI font.
 
 ## Compile
 

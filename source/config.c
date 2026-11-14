@@ -115,8 +115,8 @@ int read_config(const char *file) {
   config.map_zoom_fix = 1;
   config.map_zoom = 0.0f;           // auto = field_zoom
   config.map_minimap_fix = 1;
-  config.font_snap = 0;             // auto (gfx.c: whole steps on narrow panels, half on wide)
-  config.font_scale = 0.0f;         // auto (gfx.c: 1.0 narrow / 1.25 wide)
+  config.font_snap = 0;             // auto (gfx.c: half steps)
+  config.font_scale = 0.0f;         // auto (gfx.c: 1.25)
   config.text_scale_fix = 1;        // labels drawn 1:1 (patches.h)
 
   FILE *f = fopen(file, "r");

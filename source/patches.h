@@ -795,8 +795,9 @@ static const PatchEntry g_diagonal_patches[] = {
 // 5.  Framing cluster: ui_scale_fix / game_area_width_fix / field_zoom_fix /
 //     map_zoom_fix (+ map_minimap_fix) / text_scale_fix.  Ported from ct_nx
 //     (patches.h sections 7-9 + map_zoom) and generalised from the Switch's
-//     fixed 640x360 canvas to any panel; text_scale_fix and the minimap anchor
-//     are new here (4:3 panels only ever needed them).
+//     fixed 640x360 canvas to any 16:9 panel; text_scale_fix and the minimap
+//     anchor are new here (text_scale_fix matters wherever the design scale is
+//     not exactly 2: render_scale < 1, 1080p).
 //
 //     WHY. libchrono has no single design resolution: a static initialiser at
 //     0x641c00.. builds an aspect-bucketed table -- 568x320 (16:9), 480x360
@@ -813,11 +814,9 @@ static const PatchEntry g_diagonal_patches[] = {
 //       ui_scale_fix   -- stamp EVERY table entry with (panel / design_scale)
 //                         so the scene scale is exactly design_scale on both
 //                         axes, whatever the runtime picker chooses.
-//                         design_scale auto: wide panels floor(panel_w / 640)
-//                         (1280x720 -> 2 = 640x360, the ct_nx value; 1080p ->
-//                         3); narrow panels panel_w / 480 -- the engine's own
-//                         4:3 layout (640x480 -> 1.333 = 480x360; a 1:1 canvas
-//                         left its 480-wide menus centred in dead space).
+//                         design_scale auto: floor(panel_w / 640) (1280x720 ->
+//                         2 = 640x360, the ct_nx value; 1080p -> 3), the
+//                         fraction panel_w / 640 under 1280.
 //       game_area_width_fix -- ctr::gameArea's width is a hard-coded 568.0
 //                         (its height is adaptive); make the width adaptive
 //                         too. A proven no-op at the stock 568 design.
@@ -826,21 +825,18 @@ static const PatchEntry g_diagonal_patches[] = {
 //                         densities follow 1/z so the drawn view still covers
 //                         exactly the design canvas; the node is re-anchored to
 //                         the canvas centre. Panel px per art px = z *
-//                         design_scale. Auto p (panel px per art px): wide
-//                         panels take the smallest whole p whose rows fit the
-//                         engine's fixed 432x224 field RenderTexture (720p ->
-//                         4 px, 320x180 art: ct_nx's shipped framing); narrow
-//                         panels show the SNES's 256 columns, floor(panel_w /
-//                         256) bumped while rows > 240 (640x480 -> 2 px,
-//                         320x220 art, the 224-row picture letterboxed evenly).
+//                         design_scale. Auto p (panel px per art px): the
+//                         smallest whole p whose rows fit the engine's fixed
+//                         432x224 field RenderTexture (720p -> 4 px, 320x180
+//                         art: ct_nx's shipped framing).
 //       map_zoom_fix   -- the same for the WorldMap node (four setScale sites)
 //                         plus its anchor; p capped so the 256-column SNES map
 //                         window (the year plate lives inside it) fits the
 //                         panel. map_minimap_fix keeps the full-world overview
 //                         (the same node rescaled) at its stock X.
 //       text_scale_fix -- system-font labels drawn 1:1 (stock: rendered at
-//                         points x 2 and shrunk by 2 / design_scale -- 2/3 on
-//                         4:3). See its own header below.
+//                         points x 2 and shrunk by 2 / design_scale; 1:1 only
+//                         where that is 2). See its own header below.
 //
 //     Every site below is ct_nx's (same libchrono v2.1.5, same ISA; load_base
 //     == load_virtbase here, so raw vaddrs apply directly) and every old word
@@ -1128,9 +1124,9 @@ static void apply_map_node_anchor(so_module *mod, float zoom, float design_w, fl
 
 // The world-map OVERVIEW (WorldMap::enterMiniMap) is the "worldmap" node
 // itself rescaled from zoom to (0.3125, 0.2778) -- the whole 1536x1024 map at
-// the 4:3 design width (x0.5556 on 16:9) -- so it keeps the node position we
-// set in Init2: on 640x480 it sat 64 px right of centre, cut off at the panel
-// edge. Its X is correct at the node's STOCK position, so enterMiniMap sets
+// 480 design px wide -- so it keeps the node position we set in Init2 and
+// sits off-centre by (stock_x - node_x). Its X is correct at the node's STOCK
+// position, so enterMiniMap sets
 // the node X to stock_x and exitMiniMap puts node_x back. Both functions
 // fetch the node with getChildByName("worldmap") and, the name being a short
 // string, skip straight to the `ldr x8,[x0]` before their setScale -- that
@@ -1326,28 +1322,16 @@ static CtFraming ct_framing_resolve(void) {
   if (fw <= 0) fw = pw;
   if (fh <= 0) fh = ph;
   f.frame_w = fw; f.frame_h = fh;
-  // Auto design scale. Wide panels: an integer multiple of the 640-wide 16:9
-  // canvas (1280x720 -> 2, 640x360 exact). Narrow panels (4:3, 1:1): the
-  // engine's own 480-wide 4:3 layout -- its menus are laid out for a 480x360
-  // box, so a 1:1 640x480 canvas leaves them centred in dead space (tried on
-  // the RG40XX-H; rejected). 640x480 -> 1.333 (design 480x360, stock UI size),
-  // 720x720 -> 1.5, 1024x768 -> 2.133. Field/map art stays integer regardless
-  // (field_zoom auto compensates), only UI sprites carry the fractional scale.
+  // Auto design scale: an integer multiple of the 640-wide 16:9 canvas
+  // (1280x720 -> 2, 1080p -> 3; 640x360 exact). Under 1280 the floor would be
+  // 1 = a canvas the size of the panel, UI at ~59% of stock on a 960x544 -- so
+  // take the fraction instead (960 -> 1.5, 854 -> 1.33: UI within ~10% of
+  // stock). These rules are the 16:9 ones; they also run, unsupported, on any
+  // other aspect (the 4:3 profile was removed -- see TODO.md).
   float s = config.design_scale;                 // panel px per design unit
-  const float aspect = (float)pw / (float)ph;
   if (s <= 0.0f) {
-    if (aspect >= 1.6f) {
-      // Wide: a whole multiple of the 640-wide canvas (1280x720 -> 2, 1080p ->
-      // 3). Under 1280 the floor would be 1 = a canvas the size of the panel,
-      // UI at ~59% of stock on a 960x544 -- so take the fraction instead
-      // (960 -> 1.5, 854 -> 1.33: UI within ~10% of stock, the same trade
-      // narrow panels make).
-      s = floorf((float)pw / 640.0f);
-      if (s < 2.0f) s = (float)pw / 640.0f;
-    } else {
-      s = (float)pw / 480.0f;
-      if (s < 1.0f) s = 1.0f;
-    }
+    s = floorf((float)pw / 640.0f);
+    if (s < 2.0f) s = (float)pw / 640.0f;
   }
   if (s < 0.05f) s = 0.05f;
   // The table stamp holds movz top-16 floats: snap the design size to what the
@@ -1358,31 +1342,17 @@ static CtFraming ct_framing_resolve(void) {
   f.design_scale = (float)fw / f.design_w;       // frame px per design unit (== s at native)
   float z = config.field_zoom;
   if (z <= 0.0f) {
-    float p;                                     // panel px per art px
-    if (aspect >= 1.6f) {
-      // Wide panels: the smallest whole px/art whose rows fit the 432x224
-      // plane (720p -> 4 px, 320x180 art: the ct_nx look).
-      p = ceilf((float)ph / 220.0f);
-    } else {
-      // Narrow panels: the SNES's 256 columns on screen (640 -> 2 px, 1024 ->
-      // 4 px), bumped only if that would ask for more than a 240-row picture
-      // (720x720 -> 3 px). 3 px on 640x480 showed 213x160 -- too little room
-      // (user, RG40XX-H); 2 px shows 320x220 with 16 px letterbox bars.
-      p = floorf((float)pw / 256.0f);
-      if (p < 1.0f) p = 1.0f;
-      while ((float)ph / p > 240.0f) p += 1.0f;
-    }
+    // Panel px per art px: the smallest whole size whose rows fit the 432x224
+    // field plane (720p -> 4 px, 320x180 art: the ct_nx look).
+    float p = ceilf((float)ph / 220.0f);
     if (p < 1.0f) p = 1.0f;
     z = p / s;                                   // node zoom is in design units: frame-independent
   }
   f.field_zoom = z;
   // Auto map zoom: same px/art as the field, but capped so the SNES 256-column
   // world-map window fits the panel width. The map's screen-fixed sprites (the
-  // "1000 A.D." year plate at the bottom-left) sit inside those 256 columns, so
-  // 3 px on a 640-wide panel (768 px) clips the plate off the left edge
-  // (tried on the RG40XX-H; rejected). 640x480 -> 2 px (map_zoom 1.5, plate
-  // visible, more map than the SNES window since the planes are 544 wide),
-  // 1280x720 -> 4 px, 640x360 -> 2 px (unchanged).
+  // "1000 A.D." year plate at the bottom-left) sit inside those 256 columns and
+  // clip off the left edge otherwise. 1280x720 -> 4 px, 640x360 -> 2 px.
   float mz = config.map_zoom;
   if (mz <= 0.0f) {
     float pm = floorf((float)pw / 256.0f);

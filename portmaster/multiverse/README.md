@@ -21,7 +21,7 @@ the zip from it.
 | `ports/ct/gameinfo.xml` | `portmaster/pkg/gameinfo.xml` | required; its `<image>` must match the screenshot filename |
 | `ports/ct/README.md` | `ct.md` | the asset-extraction guide shown to users |
 | `ports/ct/screenshot.png` | `portmaster/pkg/ct/screenshot.png` | committed: 1280×720 gameplay; see below |
-| `ports/ct/ct/...` | the built `ct`, `font.ttf`, `font-4x3.ttf`, `libs.aarch64/`, `licenses/` | gitignored here, so they must be committed in the fork |
+| `ports/ct/ct/...` | the built `ct`, `font.ttf`, `libs.aarch64/`, `licenses/` | gitignored here, so they must be committed in the fork |
 
 ## Rules worth knowing before you package
 

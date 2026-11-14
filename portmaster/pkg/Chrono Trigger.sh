@@ -60,9 +60,9 @@ $GAMEDIR/
   exit 1
 fi
 
-# --- fonts: the pixel fonts ship (font.ttf / font-4x3.ttf); copy in a system
-# font as a fallback face for glyphs they lack (CJK for ja/ko/zh where the CFW
-# has such a font, otherwise DejaVu for symbols) -----------------------------
+# --- fonts: the pixel font ships (font.ttf); copy in a system font as a
+# fallback face for glyphs it lacks (CJK for ja/ko/zh where the CFW has such a
+# font, otherwise DejaVu for symbols) ------------------------------------------
 if [ ! -f "$GAMEDIR/fonts/standard.ttf" ]; then
   mkdir -p "$GAMEDIR/fonts"
   for f in /usr/share/emulationstation/resources/DroidSansFallbackFull.ttf \
@@ -77,8 +77,8 @@ fi
 export LD_LIBRARY_PATH="$GAMEDIR/libs.${DEVICE_ARCH}:$LD_LIBRARY_PATH"
 export SDL_GAMECONTROLLERCONFIG="$sdl_controllerconfig"   # framework pad mapping
 export GAMEDIR
-# UI font size is auto per panel (config.txt `font_scale`, 0 = auto: 1.0 on 4:3,
-# 1.25 on 16:9). To force one: export CT_FONT_SCALE=1.5
+# UI font size: config.txt `font_scale`, 0 = auto (1.25). To force one:
+# export CT_FONT_SCALE=1.5
 # SNES-style text drop-shadow is baked into the binary (force, 1px down-right, 70%).
 # To override: export CT_TEXT_SHADOW="off" | "auto" | "dx,dy,opacity"
 # (offsets in final pixels, opacity 0..1).

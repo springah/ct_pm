@@ -35,8 +35,8 @@ extern int screen_width, screen_height;
 // pixel boundaries (0 = not a pixel font). ChronoType is authored on a 16 px/em
 // grid (every outline coordinate is a multiple of 1024/16 = 64 font units), so
 // it renders cleanly only at 16/32/48... px; any other size puts strokes on
-// half pixels and they come out alternately 1 and 2 px wide -- the lumpy text
-// on 4:3 panels, where the engine's 1.333x scale lands sizes like 20 and 13.
+// half pixels and they come out alternately 1 and 2 px wide (the lumpy text a
+// fractional design scale produces when it lands sizes like 20 and 13).
 static int g_font_grid = 0;
 
 static long gcd_l(long a, long b) { while (b) { long t = a % b; a = b; b = t; } return a; }
@@ -45,7 +45,7 @@ static void detect_font_grid(FT_Face face) {
   if (!face || !FT_IS_SCALABLE(face) || face->units_per_EM <= 0) return;
   // Per-glyph: the gcd of the outline coordinates gives that glyph's grid.
   // Vote across glyphs and take the winner (a global gcd is wrecked by one
-  // stray glyph or advance -- PixelMplus has a 364-unit advance among 500s;
+  // stray glyph or advance -- a pixel font can carry one odd advance among regular ones;
   // advances are not part of the vote). Grid = upem / g must be a whole
   // 4..64 px/em, and the winner must own nearly every outlined glyph.
   const long upem = face->units_per_EM;
@@ -107,18 +107,14 @@ void gfx_init(void) {
   }
 
 #ifndef __SWITCH__
-  // Panel profile. Narrow panels (4:3, 1:1) run the engine's 480-wide layout,
-  // whose text sizes (16 / 21 px on 640x480) no ChronoType size lands on; the
-  // bundled font-4x3.ttf (PixelMplus10: 1-px strokes on a 10 px/em grid) at
-  // exactly 2x does -- 20 px cells, 2 px strokes, the same pixel as the 2 px
-  // field art. Wide panels keep ChronoType (font.ttf) with half-step snapping
-  // and a 1.25 scale (16:9 layout: 24 -> 32 px at 720p).
-  const int narrow = screen_height > 0 && (float)screen_width / (float)screen_height < 1.6f;
+  // Font profile for the 16:9 layout: ChronoType (font.ttf) with half-step
+  // snapping and a 1.25 scale (24 -> 32 px at 720p). (A separate 4:3 profile
+  // with a second pixel font was tried and removed; see TODO.md.)
   int font_scale_env = 0;
   { const char *s = getenv("CT_FONT_SCALE");
     if (s) { float v = (float)atof(s); if (v > 0.1f && v < 8.0f) { g_font_scale = v; font_scale_env = 1; } } }
   if (!font_scale_env)
-    g_font_scale = config.font_scale > 0.0f ? config.font_scale : (narrow ? 1.0f : 1.25f);
+    g_font_scale = config.font_scale > 0.0f ? config.font_scale : 1.25f;
   { const char *s = getenv("CT_TEXT_SHADOW");
     if (s) {
       if (!strcmp(s, "off"))        g_shadow_mode = 0;
@@ -156,14 +152,13 @@ void gfx_init(void) {
   // common system paths) for Latin + CJK coverage. Missing fonts degrade
   // gracefully (system-font labels just won't draw; the engine still boots).
   static const char *candidates[] = {
-    "font-4x3.ttf", "font.ttf", "fonts/standard.ttf",
+    "font.ttf", "fonts/standard.ttf",
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     "/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf",
     "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
   };
   const char *primary = NULL;
   for (unsigned i = 0; i < sizeof(candidates) / sizeof(*candidates) && g_face_count < MAX_FACES; i++) {
-    if (i == 0 && !narrow) continue;                       // the 4:3 font only on narrow panels
     if (FT_New_Face(g_ft, candidates[i], 0, &g_faces[g_face_count]) == 0) {
       if (!primary) primary = candidates[i];
       g_face_count++;
@@ -173,16 +168,15 @@ void gfx_init(void) {
 
   if (g_face_count > 0) detect_font_grid(g_faces[0]);
 #ifndef __SWITCH__
-  // font_snap: config 0 = auto (whole steps for the 4:3 font, half steps for
-  // ChronoType), 1 / 2 explicit, 3 = off; env CT_FONT_SNAP wins.
+  // font_snap: config 0 = auto (half steps: ChronoType's 2-px strokes survive
+  // a 1-2-1-2 decimation), 1 / 2 explicit, 3 = off; env CT_FONT_SNAP wins.
   int snap = config.font_snap;
   { const char *s = getenv("CT_FONT_SNAP"); if (s) snap = atoi(s); }
-  if (snap == 0) snap = narrow ? 1 : 2;
+  if (snap == 0) snap = 2;
   g_snap = (snap == 1 || snap == 2) ? snap : 0;
   if (g_snap == 2 && (g_font_grid & 1)) g_snap = 1;   // half of an odd grid is off-grid: whole steps only
-  fprintf(stderr, "gfx: %d font face(s) (%s), pixel grid %d px/em, %s panel, font_snap %d, font_scale %g\n",
-          g_face_count, primary ? primary : "none", g_font_grid, narrow ? "narrow" : "wide",
-          g_snap, (double)g_font_scale);
+  fprintf(stderr, "gfx: %d font face(s) (%s), pixel grid %d px/em, font_snap %d, font_scale %g\n",
+          g_face_count, primary ? primary : "none", g_font_grid, g_snap, (double)g_font_scale);
 #endif
   g_ok = g_face_count > 0;
   if (!g_ok)
@@ -375,9 +369,8 @@ static void draw_line_glyphs(unsigned char *out, int W, int H,
 
 // Glyph metrics at the (possibly snapped) render size, and the line cell that
 // holds them: the engine's requested cell, grown when a size snapped UP past
-// the request (16 -> 20 px) has taller glyphs than that cell -- else the
-// descenders are clipped (PixelMplus10: 19-row cell, 22-row glyphs, the y/g
-// tails cut off).
+// the request (e.g. 16 -> 20 px) has taller glyphs than that cell -- else the
+// descenders (y/g tails) are clipped.
 static int snapped_cell(int rpx, int line_h_req, int *asc, int *desc) {
   FT_Set_Pixel_Sizes(g_faces[0], 0, rpx);
   *asc  = (int)(g_faces[0]->size->metrics.ascender >> 6);
@@ -396,8 +389,8 @@ unsigned char *gfx_render_text_rgba(const char *text, int font_size,
   if (!g_ok || !text)
     return NULL;
   int px = font_size > 0 ? font_size : 16;
-  // Visual-size scale (config font_scale / CT_FONT_SCALE; auto = 1.0 on narrow
-  // panels, 1.25 on wide, resolved in gfx_init). Pixel fonts like ChronoType
+  // Visual-size scale (config font_scale / CT_FONT_SCALE; auto = 1.25, resolved
+  // in gfx_init). Pixel fonts like ChronoType
   // render glyphs small within their em, so the whole cell scales up to match
   // the engine's intended on-screen size.
   px = (int)(px * g_font_scale + 0.5f);
