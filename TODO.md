@@ -15,6 +15,8 @@ explicitly deferred. Tick as you go; delete the file (or rename to CHANGELOG not
 - [ ] **Upgrade test from beta.9**: keep an existing `ports/ct/` (config, saves,
       `shadercache/`), drop the new binary in, confirm `config.txt` gains any new keys
       (now logged under `CT_LOG=1`) and saves still load.
+      *2026-11-14, first beta.10 build on the TrimUI: `config.txt` went from 9 to 29 keys
+      with the old values kept, and a save was written. Repeat on the final binary.*
 - [ ] **Missing-files path**: launch with `libchrono.so` absent and confirm the framework
       dialog shows the message, not a silent return to the menu.
 - [ ] **Crash path**: confirm a non-zero exit shows the "exited unexpectedly" dialog and
@@ -35,33 +37,29 @@ explicitly deferred. Tick as you go; delete the file (or rename to CHANGELOG not
 
 ## Should ship in beta.10 (small, low risk)
 
-- [ ] **Linux `sysconf` answers** (`source/libc_shim.c`, `_SC_NPROCESSORS_*` and
-      `_SC_PHYS_PAGES`): hard-coded to 3 cores / 3 GB from the Switch. On Linux return
-      `sysconf(_SC_NPROCESSORS_ONLN)` and `sysconf(_SC_PHYS_PAGES)`. Check whether the
-      engine sizes any thread pool from it before and after (CT_LOG, thread count in
-      `/proc/<pid>/status`).
-- [ ] **`getDeviceModel`** (`source/jni_fake.c`) returns `"Nintendo Switch"`. Return the
-      SDL/`uname` machine string or `"PortMaster"` on Linux; grep the engine's text requests
-      under `CT_LOG=1` to make sure nothing branches on it.
-- [ ] **Controller name** (`source/main.c`, `"Nintendo Switch Controller"`): pass the
-      SDL controller name through on Linux, or a neutral constant.
-- [ ] **`CT_MOVELOG` hook** is installed whenever the v2.1.5 fingerprint matches, even
-      with the env var unset (`source/main.c`). Gate the hook on the variable so release
-      builds don't patch `NanameHantei` for nothing.
-- [ ] **Launcher comment hygiene** (`portmaster/pkg/Chrono Trigger.sh`): the zram block
-      sizes 768 MB for a 1 GB device. Fine for the TrimUI; add a note or a
-      `CT_ZRAM_MB` override before anyone runs it on a 2 GB device.
-- [ ] **Decide on the dev harnesses** (`portmaster/harness_load.c`, `harness_stubs.c`,
-      `movie_probe.c`, `ctmem_watch.sh`, `ctleak_watch.sh`): move under
-      `portmaster/dev/` with a two-line README, or drop them. They are not built by
-      `build.sh` or CI today.
-- [ ] **CI link check**: `c-compile.yml` only compiles to `.o`. Add a step that links the
-      Linux target against stub `libchrono`/`libc++_shared` symbols (or at least links the
-      `movie_stub.c` variant) so a missing entry point like the one `movie_stub.c` had is
-      caught. Could also run `-Wall -Wextra` and fail on new warnings.
-- [ ] **Font fallback face on Knulli**: the launcher copies a system font to
-      `fonts/standard.ttf` for CJK. Verify which candidate actually exists on current
-      Knulli (DroidSansFallbackFull vs Noto) and that `ja`/`zh` menus render.
+- [x] **Linux `sysconf` answers** (`source/libc_shim.c`): returns the device's own core
+      count and RAM on Linux. Only `libc++_shared.so` imports `sysconf`
+      (`std::thread::hardware_concurrency`); `libchrono.so` never calls it. Compare the
+      thread count in `/proc/<pid>/status` on the TrimUI against beta.9 during the playtest.
+- [x] **`getDeviceModel`** (`source/jni_fake.c`): returns `"PortMaster"` on Linux. The
+      engine never asks for it (the name is not in `libchrono.so`).
+- [x] **Controller name** (`source/main.c`): `"Gamepad"` on Linux. No controller-name
+      strings exist in `libchrono.so`, so nothing branches on it.
+- [x] **`CT_MOVELOG` hook**: already gated. `movelog_install` returns before touching
+      `NanameHantei` unless the variable is set.
+- [x] **Launcher zram size**: `CT_ZRAM_MB` overrides the 768 MB default (`0` = no zram).
+- [x] **Dev harnesses**: moved to `portmaster/dev/` with a README.
+- [x] **CI link check**: `c-compile.yml` now links both variants (the real FMV player and
+      `movie_stub.c`). `-Wall` is not enabled: `source/main.c` has three unused Switch-side
+      symbols that would need guarding first.
+- [ ] **Font fallback face on Knulli**: `DroidSansFallbackFull.ttf` exists on current
+      Knulli and is what the launcher copies to `fonts/standard.ttf`. A headless run with
+      `language ja` loads it and serves the Japanese text requests. Still to do: look at
+      `ja` / `zh` menus on the device.
+- [ ] **Title says "Touch to Start"**: the engine's own string, same in beta.9. The
+      optional controller-wording patch fixes it (README, *Controller wording*; verified
+      headless: the title reads "Press to Start"). Decide whether the release notes
+      should recommend it.
 
 ## Decisions to make
 
@@ -83,6 +81,8 @@ explicitly deferred. Tick as you go; delete the file (or rename to CHANGELOG not
       reference only: the next attempt should start from what the engine's 4:3 table entry
       actually wants and decide field zoom, UI scale and font as one design, not three
       independent auto rules. Not part of this release.
+- **Runtime `.ctp` mod loader** (ct_nx's `source/modpack.c`): would let users drop packs
+      into a `mods/` folder instead of repacking `resources.bin` offline. Not ported.
 - **Other CFWs** (muOS, ArkOS, ROCKNIX, AmberELEC): untested. The untested surface is
       `$DEVICE_ARCH` from older `control.txt`, the host SDL2/freetype/GLES libraries, and
       the zram/cpufreq block in the launcher. Needs testers.
@@ -107,5 +107,7 @@ explicitly deferred. Tick as you go; delete the file (or rename to CHANGELOG not
 - First session compiles shaders; expect stutter on scene changes until `shadercache/`
   is warm.
 - 4:3 panels: not supported; they run the 16:9 rules and look small.
+- Some text still refers to touch ("Touch to Start", a few tutorial lines); the optional
+  controller-wording patch in the README rewrites it.
 - The game must be the Android **v2.1.5** build; other versions boot with every patch
   disabled and the stock mobile UI (the log says so).

@@ -11,7 +11,7 @@ Switch (`ct_nx`) target is maintained separately; the `#ifdef __SWITCH__` branch
 - `os.h`       — platform abstraction (the only OS surface the shared code may call).
 - `os_linux.c` — SDL2 + POSIX backend (loader/TLS/GL core, input, env).
 - `osk.c`, `crash.c`, `compat_libc.c`, `movie_stub.c` — Linux-only units (see below).
-- `harness_load.c`, `harness_stubs.c`, `movie_probe.c` — bring-up smoke tests; not
+- `dev/` (`harness_load.c`, `harness_stubs.c`, `movie_probe.c`, the two watch scripts) — bring-up smoke tests and playtest monitors; not
   part of the shipped binary.
 
 ## The TLS finding
@@ -35,7 +35,7 @@ identical — `ct_nx.nro` rebuilt + verified; `#else` uses `os_code_*`). Harness
 libc++_shared.so + libchrono.so: both **mapped, relocated (incl. RELR), cross-resolved,
 and mprotect'd RX** → "LOADS CLEAN". The mmap RW→mprotect RX dance works on glibc.
 Rerun: `gcc -O2 -march=armv8-a -Iportmaster -Isource $(sdl2-config --cflags)
-portmaster/harness_load.c source/so_util.c portmaster/os_linux.c $(sdl2-config --libs)
+portmaster/dev/harness_load.c source/so_util.c portmaster/os_linux.c $(sdl2-config --libs)
 -o /tmp/h && /tmp/h portmaster/_so`  (put the two .so in `portmaster/_so/`, gitignored).
 
 **Import surface = 281 unique unresolved in libchrono** (the shim work, by category):
@@ -60,7 +60,7 @@ All edits guarded by `#ifdef __SWITCH__`; **`ct_nx.nro` rebuilt + verified** unc
 (prefs/gfx/movie/config/util) so it links without milestone-3 files. Build+run:
 ```
 gcc -O2 -march=armv8-a -Iportmaster -Isource $(sdl2-config --cflags) \
-  portmaster/harness_load.c portmaster/harness_stubs.c source/so_util.c \
+  portmaster/dev/harness_load.c portmaster/dev/harness_stubs.c source/so_util.c \
   portmaster/os_linux.c source/imports.c source/libc_shim.c source/jni_fake.c \
   source/asset.c source/opensles.c $(sdl2-config --libs) -lGLESv2 -lEGL -lpthread -lm \
   -o /tmp/h2 && /tmp/h2 portmaster/_so
@@ -148,7 +148,7 @@ builds the zip and enforces `name "ct.zip"`, and a gameplay screenshot is requir
 `pm_finish` (all provided by control.txt/funcs.txt/mod_<cfw>.txt).
 
 ### Verification (2026-06-24)
-`portmaster/movie_probe.c` — a headless decode smoke test (no display, no engine):
+`portmaster/dev/movie_probe.c` — a headless decode smoke test (no display, no engine):
 de-obfuscates a real `.dat`, demuxes + decodes video & audio frames through the bundled
 ffmpeg. On the TrimUI it decoded the intro (`001.dat`, 158.4s, h264 720x486 + aac 48k):
 90 video + 143 audio frames, `PROBE_OK`. Confirms de-obfuscation, mov demux, H.264 +

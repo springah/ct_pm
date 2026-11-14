@@ -90,13 +90,16 @@ $ESUDO chmod +x "$GAMEDIR/ct" 2>/dev/null
 # scene loads right after the attract FMV (whose decoder heap is still resident),
 # and the kernel OOM-kills the game. A ~768 MB zram device gives that spike a
 # compressed-RAM overflow to land in instead of dying. Torn down on exit.
+# The size suits a 1 GB device; export CT_ZRAM_MB to change it (0 = no zram).
+ZRAM_MB="${CT_ZRAM_MB:-768}"
+case "$ZRAM_MB" in ''|*[!0-9]*) ZRAM_MB=768 ;; esac
 ZRAM_DEV=""
-$ESUDO modprobe zram >/dev/null 2>&1   # a module on the TrimUI's 4.9 kernel; no-op elsewhere
-if [ -e /sys/class/zram-control/hot_add ] && [ -z "$(cat /proc/swaps | grep zram)" ]; then
+[ "$ZRAM_MB" -gt 0 ] && $ESUDO modprobe zram >/dev/null 2>&1   # a module on the TrimUI's 4.9 kernel; no-op elsewhere
+if [ "$ZRAM_MB" -gt 0 ] && [ -e /sys/class/zram-control/hot_add ] && [ -z "$(cat /proc/swaps | grep zram)" ]; then
   ZN=$(cat /sys/class/zram-control/hot_add 2>/dev/null)
   if [ -n "$ZN" ] && [ -e "/sys/block/zram${ZN}/disksize" ]; then
     echo lz4 | $ESUDO tee "/sys/block/zram${ZN}/comp_algorithm" >/dev/null 2>&1
-    echo $((768 * 1024 * 1024)) | $ESUDO tee "/sys/block/zram${ZN}/disksize" >/dev/null 2>&1
+    echo $((ZRAM_MB * 1024 * 1024)) | $ESUDO tee "/sys/block/zram${ZN}/disksize" >/dev/null 2>&1
     if $ESUDO mkswap "/dev/zram${ZN}" >/dev/null 2>&1 && $ESUDO swapon -p 100 "/dev/zram${ZN}" >/dev/null 2>&1; then
       ZRAM_DEV="$ZN"
     fi

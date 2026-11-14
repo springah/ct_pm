@@ -773,8 +773,13 @@ int main(void) {
   ct_rescale_set_gl_invalidate(e_glInvalidate); // the per-frame upscale blit as well
 #endif
 
-  // a persistent device-name jstring for the controller event callbacks
+  // a persistent device-name jstring for the controller event callbacks. The
+  // engine only uses it to tell pads apart; nothing in libchrono matches on it.
+#ifdef __SWITCH__
   g_ctrl_name = jni_make_string("Nintendo Switch Controller");
+#else
+  g_ctrl_name = jni_make_string("Gamepad");
+#endif
 
   // force the UI language before the engine builds the title scene
   force_language();

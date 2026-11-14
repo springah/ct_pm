@@ -212,7 +212,8 @@ redirects stdout and stderr to `log.txt` in the port directory. Further dev-only
 movement), `CT_STICKLOG` (analog input), `CT_CAPTURE` (dump frames as PPM), `CT_WINDOWED`,
 `CT_IOBUF_KB`, `CT_OSK_TEST` / `CT_OSK_CAPTURE` (on-screen keyboard).
 The launcher also adds a temporary zram swap and eases the CPU governor for the session
-(`CT_GOV` / `CT_MIN_KHZ`), restoring both on exit.
+(`CT_GOV` / `CT_MIN_KHZ`), restoring both on exit. The swap is sized for a 1 GB device;
+`CT_ZRAM_MB` changes it (`0` = none).
 
 ## Pixel-art mods (optional)
 
@@ -224,6 +225,26 @@ schemes, and icon sets). `tools/pixeldemaster/` repacks **your own** `resources.
 The `.ctp` patch format it reads comes from River Nyxx's [CT_Explore](https://rivernyxx.com).
 See [`tools/pixeldemaster/README.md`](tools/pixeldemaster/README.md).
 
+## Controller wording (optional)
+
+The game's text was written for a touchscreen: the title says "Touch to Start" and some
+tutorial lines name on-screen buttons. ct_nx's
+[`generate_text_ctp.py`](https://github.com/NaGaa95/ct_nx/blob/main/tools/generate_text_ctp.py)
+(by ppkantorski) builds a `.ctp` from **your own** `resources.bin` that rewrites those
+lines for a controller in all nine languages, using the `<BTN_*>` tags that
+`controller_glyphs` draws. This port has no runtime mod loader, so apply it to the archive
+once with the repack tool:
+
+```sh
+python3 generate_text_ctp.py assets/resources.bin -o text.ctp
+python3 tools/pixeldemaster/apply_pixeldemaster.py \
+    assets/resources.bin resources.new.bin text.ctp --with-text
+```
+
+Then replace `assets/resources.bin` with `resources.new.bin` (keep a copy of the
+original). If you also use a pixel-art pack, apply that first and run these two steps on
+the result. Nothing is shipped either way; both tools only rewrite files you supply.
+
 ## Credits
 
 * **fgsfds** — [max_nx](https://github.com/fgsfdsfgs/max_nx), the loader this is based on
@@ -231,6 +252,7 @@ See [`tools/pixeldemaster/README.md`](tools/pixeldemaster/README.md).
 * **NaGaa95** — [`ct_nx`](https://github.com/NaGaa95/ct_nx), the Switch port this derives from
 * **JohnnyonFlame** — [gmloader-next](https://github.com/JohnnyonFlame/gmloader-next), reference for the Linux ELF-loader + glibc TLS handling
 * the **PortMaster** community — the toolchain, builder images, and packaging conventions this port ships on
+* **ppkantorski** — the controller-wording text patch generator in ct_nx
 * **Caveras** — the *ChronoType* SNES font recreation (CC BY-NC-SA; see `portmaster/pkg/ct/licenses/font-license.txt`), the UI font
 * **FFmpeg** — the [FFmpeg project](https://ffmpeg.org) (LGPL v2.1); a minimal decode-only
   build is bundled for cutscene playback (`portmaster/ffmpeg-build.sh`, license in

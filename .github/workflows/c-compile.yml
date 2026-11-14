@@ -1,14 +1,16 @@
 name: c-compile
 
-# Compile-check the Linux/PortMaster target. We can't link a full `ct` here
-# (that needs the user-supplied libchrono.so / libc++_shared.so), so this
-# compiles every Linux-target translation unit to a .o — enough to catch header
-# breakage and #ifdef regressions on the `#else` (non-Switch) branches. It needs
-# only distro dev packages. The Switch `#ifdef __SWITCH__` branches are
-# built/verified in the sibling ct_nx repo. The real FMV unit (movie_player.c)
-# uses the FFmpeg 5.1+ channel-layout API, so it compiles against Ubuntu 24.04's
-# ffmpeg 6.x here (not 22.04's 4.4); the linked binary is still validated in the
-# PortMaster builder image with its pinned ffmpeg 7.1.
+# Compile and link the Linux/PortMaster target. `ct` never links against the
+# game's own libraries (it loads libchrono.so / libc++_shared.so itself at run
+# time), so a full link works here with only distro dev packages. Each unit is
+# compiled to a .o -- catching header breakage and #ifdef regressions on the
+# `#else` (non-Switch) branches -- and then both variants are linked: the real
+# one with source/movie_player.c and the boot-to-title one with
+# portmaster/movie_stub.c, so an entry point missing from either is caught. The
+# Switch `#ifdef __SWITCH__` branches are built/verified in the sibling ct_nx
+# repo. movie_player.c uses the FFmpeg 5.1+ channel-layout API, so it builds
+# against Ubuntu 24.04's ffmpeg 6.x here (not 22.04's 4.4); the released binary
+# is still built in the PortMaster builder image with its pinned ffmpeg 7.1.
 
 on:
   push:
@@ -67,3 +69,17 @@ jobs:
             gcc $CF -c "$f" -o "build/$(basename "$f").o" || rc=1
           done
           exit $rc
+
+      - name: Link both variants
+        run: |
+          set -euo pipefail
+          LIBS="$(sdl2-config --libs) $(pkg-config --libs freetype2) \
+                -lGLESv2 -lEGL -lpthread -lm -ldl"
+          FF="$(pkg-config --libs libavformat libavcodec libswscale libswresample libavutil)"
+          COMMON="$(ls build/*.o | grep -v -e '/movie_stub\.c\.o$' -e '/movie_player\.c\.o$')"
+          echo ">> link ct (real FMV player)"
+          # shellcheck disable=SC2086
+          gcc $COMMON build/movie_player.c.o $LIBS $FF -o build/ct
+          echo ">> link ct-nofmv (movie_stub.c)"
+          # shellcheck disable=SC2086
+          gcc $COMMON build/movie_stub.c.o $LIBS -o build/ct-nofmv

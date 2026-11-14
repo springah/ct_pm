@@ -184,11 +184,30 @@ long sysconf_fake(int name) {
     case BIONIC_SC_PAGESIZE:
     case BIONIC_SC_PAGE_SIZE:
       return 0x1000;
+#ifdef __SWITCH__
     case BIONIC_SC_NPROCESSORS_CONF:
     case BIONIC_SC_NPROCESSORS_ONLN:
       return 3; // games may size thread pools off this; Switch app cores = 3
     case BIONIC_SC_PHYS_PAGES:
       return (3ll * 1024 * 1024 * 1024) / 0x1000;
+#else
+    // Linux: the device's own answers. Only libc++_shared.so imports sysconf
+    // (std::thread::hardware_concurrency); libchrono never calls it.
+    case BIONIC_SC_NPROCESSORS_CONF: {
+      long n = sysconf(_SC_NPROCESSORS_CONF);
+      return n > 0 ? n : 1;
+    }
+    case BIONIC_SC_NPROCESSORS_ONLN: {
+      long n = sysconf(_SC_NPROCESSORS_ONLN);
+      return n > 0 ? n : 1;
+    }
+    case BIONIC_SC_PHYS_PAGES: {
+      // the guest was told 4 KiB pages above; rescale if the host differs
+      long pages = sysconf(_SC_PHYS_PAGES), psz = sysconf(_SC_PAGESIZE);
+      if (pages <= 0 || psz <= 0) return (1ll * 1024 * 1024 * 1024) / 0x1000;
+      return (long)(((long long)pages * psz) / 0x1000);
+    }
+#endif
     default:
       debugPrintf("libc: sysconf(%d) -> -1\n", name);
       return -1;

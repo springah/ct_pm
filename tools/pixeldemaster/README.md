@@ -21,6 +21,11 @@ python3 apply_pixeldemaster.py resources.bin resources.modded.bin \
 Then copy `resources.modded.bin` onto the device as `assets/resources.bin`
 (keep a backup of the original). To revert, restore the backup.
 
+The same tool applies text packs: pass `--with-text` to also take the
+`Localize/*/msg/*.txt` files a `.ctp` carries. That is how ct_nx's controller-wording
+patch ("Press to Start" and the tutorial lines) gets into this port; see *Controller
+wording* in the top-level README.
+
 ## How it works
 A Pixel Demaster `.ctp` is just a ZIP of replacement files keyed by the **same
 paths the game uses** (`Game/chara/png/c000_0.png`, `Extension/title.png`, …) —

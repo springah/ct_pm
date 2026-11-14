@@ -6,7 +6,7 @@
 // demux (mov) + H.264 decode + swscale->RGBA + AAC decode + swresample (new
 // channel-layout API). NOT part of the game; build/run standalone:
 //
-//   gcc -O2 portmaster/movie_probe.c -I$FF/include -L$FF/lib \
+//   gcc -O2 portmaster/dev/movie_probe.c -I$FF/include -L$FF/lib \
 //       -lavformat -lavcodec -lswscale -lswresample -lavutil -lm -lpthread -o movie_probe
 //   LD_LIBRARY_PATH=libs ./movie_probe assets/001.dat
 #include <stdio.h>

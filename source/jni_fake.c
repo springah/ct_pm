@@ -566,7 +566,11 @@ static void *call_object(const char *name, va_list va) {
     return jni_make_string(writable_dir());
   if (!strcmp(name, "getCocos2dxPackageName") || !strcmp(name, "getPackageName"))
     return jni_make_string("com.square_enix.android_googleplay.chrono");
+#ifdef __SWITCH__
   if (!strcmp(name, "getDeviceModel")) return jni_make_string("Nintendo Switch");
+#else
+  if (!strcmp(name, "getDeviceModel")) return jni_make_string("PortMaster");
+#endif
   if (!strcmp(name, "getVersion")) return jni_make_string("2.1.5");
   if (!strcmp(name, "getStringForKey")) {
     const char *k = obj_str(va_arg(va, void *));
