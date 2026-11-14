@@ -239,4 +239,4 @@ See [`tools/pixeldemaster/README.md`](tools/pixeldemaster/README.md).
 
 No affiliation with Square Enix. "Chrono Trigger" is a trademark of its owner. No game
 assets or original program code are included; users must supply their own legally-owned
-copy. Source under the MIT License (see `LICENSE`); the bundled fonts under their own licenses.
+copy. Source under the MIT License (see `LICENSE`); the bundled font under its own license.

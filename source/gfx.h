@@ -3,7 +3,7 @@
  * cocos2d-x system-font Labels render text through the Android Cocos2dxBitmap
  * (Canvas/Paint) and hand the engine premultiplied ARGB_8888 pixels via
  * nativeInitBitmapDC. We replace the Java raster with FreeType on the bundled
- * pixel fonts (Switch: the shared system font) and produce the same
+ * pixel font (Switch: the shared system font) and produce the same
  * premultiplied RGBA8888 byte layout.
  *
  * This software may be modified and distributed under the terms
