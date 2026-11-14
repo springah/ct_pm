@@ -24,6 +24,7 @@
   CONFIG_VAR_INT(gl_threaded); \
   CONFIG_VAR_INT(gl_no_error); \
   CONFIG_VAR_INT(shader_cache); \
+  CONFIG_VAR_INT(cache_palettes); \
   CONFIG_VAR_INT(cursor_fix); \
   CONFIG_VAR_INT(remove_mobile_ui); \
   CONFIG_VAR_INT(controller_glyphs); \
@@ -93,6 +94,7 @@ int read_config(const char *file) {
   config.gl_threaded = 0;      // mesa_glthread: no-op on blob drivers (PowerVR),
                                // measured latency on panfrost/Mali -- off by default
   config.gl_no_error = 1;      // skip mesa's per-call GL validation (MESA_NO_ERROR)
+  config.cache_palettes = 0;   // share palette textures across sprites (palette_cache.c); experimental
   config.shader_cache = 1;     // GL program binary cache (shadercache.c); verified
                                // on PowerVR GE8300 + Mali-G31 (self-disables elsewhere)
   config.cursor_fix = 1;            // libchrono patch groups (patches.h); on by default (v2.1.5-verified on-device)

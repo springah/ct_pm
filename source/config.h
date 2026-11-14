@@ -71,6 +71,11 @@ typedef struct {
   // PowerVR GE8300 + Mali-G31); self-disables when the driver lacks
   // GL_OES_get_program_binary.
   int shader_cache;
+  // cache_palettes -- EXPERIMENTAL, default 0. Sprites drawn with the palette
+  // shader (world-map objects, field / battle characters, battle BG3 effects)
+  // get a freshly uploaded palette texture every frame; with 1 they share one
+  // texture per distinct palette (palette_cache.c, from ct_nx). Same contents.
+  int cache_palettes;
   // Runtime libchrono patches (patches.h; each old-word verified, and only
   // applied when the v2.1.5 fingerprint matches). On by default (verified
   // on-device against v2.1.5); set 0 in config.txt to disable any one.

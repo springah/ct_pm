@@ -145,6 +145,12 @@ keys):
   self-disables if the driver lacks it). See `source/shadercache.c`. Env override
   `CT_SHADER_CACHE`.
 
+* `cache_palettes` — **off** by default, experimental (from ct_nx). Every palette-shaded
+  sprite (world-map objects, characters on the field and in battle, battle background
+  effects) gets a freshly uploaded palette texture every frame; with `1`, sprites with the
+  same palette share one texture. Same picture, fewer uploads. See
+  `source/palette_cache.c`.
+
 **Runtime engine patches** — **on by default** (verified on-device against the supported
 Chrono Trigger Android **v2.1.5** libchrono; each write is checked against the expected
 instruction, so a different build safely skips them). Set `0` to disable any one:

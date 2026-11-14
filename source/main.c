@@ -37,6 +37,7 @@
 #include "movie_player.h"
 #include "movelog.h"
 #include "patches.h"
+#include "palette_cache.h"
 #include "rescale.h"
 
 static void *heap_so_base = NULL;
@@ -727,6 +728,9 @@ int main(void) {
     // here (pre-so_finalize); each write verifies its expected old word, so a
     // non-v2.1.5 build skips per-site instead of corrupting.
     apply_game_patches(&game_mod);
+    // config cache_palettes (off by default): GOT hooks, each checked against
+    // the v2.1.5 instruction words before it is installed.
+    apply_palette_cache(&game_mod);
   }
 
   so_finalize(&cpp_mod);
@@ -884,6 +888,7 @@ int main(void) {
                       // (getCurrentLanguage/getLocalizeResourcePath are patched)
 
     ct_rescale_begin_frame(); // no-op unless the reduced-resolution FBO is active
+    palette_cache_frame();    // release palette textures evicted last frame (no-op when off)
     e_nativeRender(fake_env);
 #ifdef __SWITCH__
     eglSwapBuffers(s_display, s_surface);

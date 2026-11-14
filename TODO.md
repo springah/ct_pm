@@ -84,9 +84,11 @@ explicitly deferred. Tick as you go; delete the file (or rename to CHANGELOG not
       reference only: the next attempt should start from what the engine's 4:3 table entry
       actually wants and decide field zoom, UI scale and font as one design, not three
       independent auto rules. Not part of this release.
-- **Palette texture cache** (ct_nx `011bd89`, `source/palette_cache.c`, experimental and
-      off by default upstream): the engine uploads a new palette texture per sprite per
-      frame; the cache shares them. Port as an opt-in key and measure on the TrimUI.
+- **Palette texture cache** (ct_nx `011bd89`, `source/palette_cache.c`): ported on the
+      `palette-cache` branch as `cache_palettes` (default 0). The engine uploads a new
+      palette texture per sprite per frame; the cache shares them. Still to do before it
+      merges: play field, world map and an effect-heavy battle on the TrimUI with
+      `cache_palettes 1`, look for wrong colours, and compare frame pacing with it off.
 - **Runtime `.ctp` mod loader** (ct_nx's `source/modpack.c`): would let users drop packs
       into a `mods/` folder instead of repacking `resources.bin` offline. Not ported.
 - **Other CFWs** (muOS, ArkOS, ROCKNIX, AmberELEC): untested. The untested surface is
