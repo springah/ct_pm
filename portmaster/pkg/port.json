@@ -11,7 +11,7 @@
         "porter": [
             "springah"
         ],
-        "desc": "The Android version of Chrono Trigger, run natively via the ct_nx loader (a sibling of the Switch port). cocos2d-x engine on SDL2 + GLES2. Built for the TrimUI Smart Pro (16:9, 720p); 4:3 panels are experimental.",
+        "desc": "The Android version of Chrono Trigger, run natively via the ct_nx loader (a sibling of the Switch port). cocos2d-x engine on SDL2 + GLES2. Built for the TrimUI Smart Pro (16:9, 720p); 4:3 panels are not supported.",
         "inst": "You must supply the game from your own legally-owned Chrono Trigger Android APK (v2.1.5). An APK is a ZIP: rename it to .zip and open it, then copy lib/arm64-v8a/libchrono.so, lib/arm64-v8a/libc++_shared.so and the whole assets/ folder into ports/ct/. TO QUIT: press Start+Select (or the hardware MENU button + Start) - there is no in-game exit.",
         "genres": [
             "rpg",

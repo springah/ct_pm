@@ -40,7 +40,8 @@ so the shared `source/` stays mergeable with it, but only the Linux (SDL2/POSIX,
 | | |
 | --- | --- |
 | D-pad / left stick | Move (right stick also works) |
-| A | Confirm · B | Cancel / dash |
+| A | Confirm |
+| B | Cancel / dash |
 | X / Y | Menu shortcuts |
 | L / R | Page / cycle |
 | **Start + Select** | **Quit the game** |
@@ -123,9 +124,9 @@ keys):
   (native, which looks best on 16:9). Set `0.75` on GPU-bound devices to trade
   sharpness for fps. See `source/rescale.c`.
 * `render_filter` — the upscale filter at present: `linear` (default, soft) or
-  `nearest` (sharp). Pair `nearest` with an integer scale — e.g. `render_scale 0.5`
-  on a 640×480 panel renders 320×240 and maps every internal pixel to an exact 2×2
-  block: true integer scaling. Env override `CT_RENDER_FILTER`.
+  `nearest` (sharp). Only matters when `render_scale` is below 1; `nearest` is clean
+  only at an integer ratio such as `0.5`, where the text becomes too small to read
+  (see *Displays*). Env override `CT_RENDER_FILTER`.
 * `force_nearest` — **on** by default. Rewrites every texture filter the engine sets
   to `NEAREST`, and stamps it at texture creation. This is the one that affects the
   game's own art: `render_filter` only covers the port's final upscale blit, whereas
@@ -155,7 +156,7 @@ instruction, so a different build safely skips them). Set `0` to disable any one
 * `fix_diagonal_movement` — smooth the field diagonal-movement stutter.
 
 **Framing / scale** (`source/patches.h` section 5; the ct_nx framing cluster, generalised
-to any panel — these three are coupled, keep them together):
+to any 16:9 panel — the fixes are coupled, keep them together):
 * `ui_scale_fix` — **on**. The engine has no single design resolution: it picks from an
   aspect-bucketed table (568×320, 480×360, …) that no handheld panel is an integer multiple
   of, so every layer is drawn at a fractional scale (2.25× at 720p, 1.33× at 640×480).
